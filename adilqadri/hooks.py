@@ -5,6 +5,27 @@ app_description = "adilqadri"
 app_email = "info@erpera.io"
 app_license = "mit"
 
+# Document Events — channel item code validation (FRD V-01, V-02, V-03)
+doc_events = {
+	"Item": {
+		"validate": "adilqadri.adilqadri.unicommerce.item_mapping.validate_item_channel_codes",
+	},
+}
+
+# Fixtures — export the Channel Mapping tab + child table on Item
+fixtures = [
+	{"dt": "Custom Field", "filters": [["module", "=", "Adilqadri"]]},
+]
+
+# Scheduled sync jobs
+scheduler_events = {
+	"cron": {
+		"*/15 * * * *": [
+			"adilqadri.adilqadri.unicommerce.tasks.scheduled_sync",
+		],
+	},
+}
+
 # Apps
 # ------------------
 

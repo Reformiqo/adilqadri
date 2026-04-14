@@ -1,0 +1,31 @@
+[
+  {
+    "doctype": "Custom Field",
+    "dt": "Item",
+    "fieldname": "channel_mapping_tab",
+    "label": "Channel Mapping",
+    "fieldtype": "Tab Break",
+    "insert_after": "website_specifications",
+    "module": "Adilqadri"
+  },
+  {
+    "doctype": "Custom Field",
+    "dt": "Item",
+    "fieldname": "channel_item_codes_section",
+    "label": "Channel Item Codes",
+    "fieldtype": "Section Break",
+    "insert_after": "channel_mapping_tab",
+    "module": "Adilqadri"
+  },
+  {
+    "doctype": "Custom Field",
+    "dt": "Item",
+    "fieldname": "channel_item_codes",
+    "label": "Channel Item Codes",
+    "fieldtype": "Table",
+    "options": "Channel Item Code",
+    "insert_after": "channel_item_codes_section",
+    "module": "Adilqadri",
+    "description": "Per-channel product code mapping (Unicommerce Ch1/Ch2, Amazon, Flipkart, etc.)"
+  }
+]

@@ -1,0 +1,140 @@
+{
+  "name": "Unicommerce Settings",
+  "module": "Adilqadri",
+  "doctype": "DocType",
+  "issingle": 1,
+  "document_type": "System",
+  "engine": "InnoDB",
+  "track_changes": 1,
+  "fields": [
+    {
+      "fieldname": "sb_conn",
+      "fieldtype": "Section Break",
+      "label": "Connection"
+    },
+    {
+      "fieldname": "enabled",
+      "fieldtype": "Check",
+      "label": "Enabled",
+      "default": "0"
+    },
+    {
+      "fieldname": "tenant_url",
+      "fieldtype": "Data",
+      "label": "Tenant URL",
+      "reqd": 1,
+      "default": "https://adilqadri.unicommerce.com",
+      "description": "Without trailing slash, e.g. https://adilqadri.unicommerce.com"
+    },
+    {
+      "fieldname": "client_id",
+      "fieldtype": "Data",
+      "label": "Client ID",
+      "reqd": 1,
+      "default": "my-trusted-client"
+    },
+    {
+      "fieldname": "cb_conn_1",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "username",
+      "fieldtype": "Data",
+      "label": "API Username",
+      "reqd": 1,
+      "description": "Uniware user email (must have Admin role)"
+    },
+    {
+      "fieldname": "password",
+      "fieldtype": "Password",
+      "label": "API Password",
+      "description": "Enter the password provided by the client. Encrypted at rest."
+    },
+    {
+      "fieldname": "sb_facilities",
+      "fieldtype": "Section Break",
+      "label": "Facilities"
+    },
+    {
+      "fieldname": "facilities",
+      "fieldtype": "Table",
+      "label": "Facilities",
+      "options": "Unicommerce Facility"
+    },
+    {
+      "fieldname": "sb_token",
+      "fieldtype": "Section Break",
+      "label": "Token Cache",
+      "collapsible": 1
+    },
+    {
+      "fieldname": "access_token",
+      "fieldtype": "Password",
+      "label": "Access Token",
+      "read_only": 1
+    },
+    {
+      "fieldname": "refresh_token",
+      "fieldtype": "Password",
+      "label": "Refresh Token",
+      "read_only": 1
+    },
+    {
+      "fieldname": "cb_token_1",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "token_expires_at",
+      "fieldtype": "Datetime",
+      "label": "Token Expires At",
+      "read_only": 1
+    },
+    {
+      "fieldname": "refresh_expires_at",
+      "fieldtype": "Datetime",
+      "label": "Refresh Token Expires At",
+      "read_only": 1
+    },
+    {
+      "fieldname": "sb_sync",
+      "fieldtype": "Section Break",
+      "label": "Sync Options"
+    },
+    {
+      "fieldname": "sync_inventory",
+      "fieldtype": "Check",
+      "label": "Sync Inventory (ERPNext → Uniware)",
+      "default": "0"
+    },
+    {
+      "fieldname": "pull_sale_orders",
+      "fieldtype": "Check",
+      "label": "Pull Sale Orders (Uniware → ERPNext)",
+      "default": "0"
+    },
+    {
+      "fieldname": "cb_sync_1",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "sync_frequency_minutes",
+      "fieldtype": "Int",
+      "label": "Sync Frequency (minutes)",
+      "default": "15"
+    },
+    {
+      "fieldname": "last_sync_at",
+      "fieldtype": "Datetime",
+      "label": "Last Sync At",
+      "read_only": 1
+    }
+  ],
+  "permissions": [
+    {
+      "role": "System Manager",
+      "read": 1, "write": 1, "create": 1, "delete": 1
+    }
+  ],
+  "sort_field": "modified",
+  "sort_order": "DESC"
+}

@@ -1,0 +1,45 @@
+{
+  "name": "Unicommerce Facility",
+  "module": "Adilqadri",
+  "doctype": "DocType",
+  "istable": 1,
+  "editable_grid": 1,
+  "engine": "InnoDB",
+  "fields": [
+    {
+      "fieldname": "facility_code",
+      "fieldtype": "Data",
+      "label": "Facility Code",
+      "reqd": 1,
+      "in_list_view": 1,
+      "columns": 3,
+      "description": "Sent in the 'Facility' HTTP header for facility-level API calls"
+    },
+    {
+      "fieldname": "facility_name",
+      "fieldtype": "Data",
+      "label": "Facility Name",
+      "in_list_view": 1,
+      "columns": 4
+    },
+    {
+      "fieldname": "warehouse",
+      "fieldtype": "Link",
+      "label": "ERPNext Warehouse",
+      "options": "Warehouse",
+      "in_list_view": 1,
+      "columns": 3,
+      "description": "ERPNext warehouse this Uniware facility maps to"
+    },
+    {
+      "fieldname": "is_default",
+      "fieldtype": "Check",
+      "label": "Default",
+      "in_list_view": 1,
+      "columns": 1
+    }
+  ],
+  "permissions": [],
+  "sort_field": "modified",
+  "sort_order": "DESC"
+}
