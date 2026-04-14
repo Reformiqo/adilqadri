@@ -62,7 +62,7 @@ def fetch_new_token(settings) -> dict:
 	"""Password grant — initial token fetch."""
 	password = settings.get_password("password")
 	if not password:
-		raise UnicommerceAuthError("API password is not set in Unicommerce Settings")
+		raise UnicommerceAuthError("API password is not set in Uniware Connector Settings")
 
 	data = _do_token_request(
 		url=_token_url(settings),
@@ -114,7 +114,7 @@ def get_access_token() -> str:
 	Return a valid access token, refreshing or re-fetching as needed.
 	This is the main entrypoint used by the REST client.
 	"""
-	settings = frappe.get_single("Unicommerce Settings")
+	settings = frappe.get_single("Uniware Connector Settings")
 	if not settings.enabled:
 		raise UnicommerceAuthError("Unicommerce integration is disabled")
 

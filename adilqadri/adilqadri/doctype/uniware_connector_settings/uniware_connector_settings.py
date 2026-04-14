@@ -3,7 +3,7 @@ import requests
 from frappe.model.document import Document
 
 
-class UnicommerceSettings(Document):
+class UniwareConnectorSettings(Document):
 	def validate(self):
 		if self.tenant_url:
 			self.tenant_url = self.tenant_url.rstrip("/")
@@ -29,13 +29,7 @@ class UnicommerceSettings(Document):
 
 	@frappe.whitelist()
 	def test_rest_call(self):
-		"""
-		Call a known REST endpoint to verify end-to-end auth + entitlement.
-
-		Returns a diagnostic dict the UI can render. If the response is HTML
-		(the classic Access Denied page), we explicitly flag that the tenant
-		likely needs REST API enablement from Unicommerce support.
-		"""
+		"""Call a real REST endpoint to verify end-to-end auth + entitlement."""
 		from adilqadri.adilqadri.unicommerce.auth import UnicommerceAuthError, get_access_token
 
 		endpoint = "/services/rest/v1/catalog/itemType/get"
@@ -49,7 +43,7 @@ class UnicommerceSettings(Document):
 		try:
 			resp = requests.post(
 				url,
-				json={"skuCode": "__TEST__"},
+				json={"skuCode": "__ADILQADRI_PROBE__"},
 				headers={
 					"Authorization": f"Bearer {token}",
 					"Content-Type": "application/json",
@@ -66,6 +60,7 @@ class UnicommerceSettings(Document):
 			"status_code": resp.status_code,
 			"content_type": content_type,
 			"preview": preview,
+			"unirequestid": resp.headers.get("unirequestid"),
 		}
 
 		if "application/json" in content_type:
@@ -76,25 +71,34 @@ class UnicommerceSettings(Document):
 				result["diagnosis"] = "Content-Type said JSON but body was not parseable"
 				return result
 
-			result["ok"] = bool(
-				resp.status_code < 400 and (data.get("successful") is None or data.get("successful"))
-			)
 			result["json_keys"] = sorted(list(data.keys())) if isinstance(data, dict) else []
-			if not result["ok"]:
-				errors = data.get("errors") if isinstance(data, dict) else None
-				result["diagnosis"] = (
-					f"Uniware API error: {errors}" if errors else f"HTTP {resp.status_code}"
-				)
+			if resp.status_code == 200 and isinstance(data, dict):
+				errors = data.get("errors") or []
+				if data.get("successful"):
+					result["ok"] = True
+					result["diagnosis"] = "REST API reachable — successful response."
+				elif errors and errors[0].get("message") in {"INVALID_ITEM_TYPE"}:
+					result["ok"] = True
+					result["diagnosis"] = (
+						"REST API reachable — probe SKU not found (expected). "
+						"Auth and permissions are working."
+					)
+				else:
+					result["ok"] = False
+					result["diagnosis"] = f"Uniware API error: {errors}"
+			else:
+				result["ok"] = False
+				result["diagnosis"] = f"HTTP {resp.status_code} — body: {preview[:200]}"
 			return result
 
 		if "text/html" in content_type and resp.status_code == 403:
 			result["ok"] = False
 			result["diagnosis"] = (
-				"403 HTML Access Denied. Bearer token was accepted for /oauth/token but this REST "
-				"endpoint routed to the web UI (JSESSIONID set). Root cause: REST API access is not "
-				"enabled on this Unicommerce tenant. Raise a ticket with Unicommerce support asking "
-				"them to enable REST API on tenant "
-				f"{self.tenant_url}."
+				"403 HTML Access Denied. The bearer token was accepted at /oauth/token but this "
+				"REST endpoint was blocked at Unicommerce's application-layer whitelist. "
+				"Root cause: this server's outbound IP is NOT in Unicommerce's IP whitelist "
+				"for this tenant. Contact your Unicommerce Account Manager with your bench's "
+				"outbound IP (run: curl https://api.ipify.org) and ask them to whitelist it."
 			)
 			return result
 

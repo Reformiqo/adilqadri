@@ -3,7 +3,7 @@ Thin REST client for Unicommerce (Uniware) APIs.
 
 Usage:
     from adilqadri.adilqadri.unicommerce.client import UniwareClient
-    client = UniwareClient()  # reads Unicommerce Settings
+    client = UniwareClient()  # reads Uniware Connector Settings
     resp = client.post("/services/rest/v1/oms/saleOrder/search", json={"searchOptions": {}})
 
 All calls go through a single session; facility code is sent in the 'Facility' header when provided.
@@ -26,7 +26,7 @@ class UniwareAPIError(Exception):
 
 class UniwareClient:
 	def __init__(self, facility_code: str | None = None):
-		self.settings = frappe.get_single("Unicommerce Settings")
+		self.settings = frappe.get_single("Uniware Connector Settings")
 		self.base_url = self.settings.tenant_url.rstrip("/")
 		self.facility_code = facility_code or self._default_facility_code()
 

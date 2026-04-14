@@ -1,5 +1,5 @@
 {
-  "name": "Unicommerce Settings",
+  "name": "Uniware Connector Settings",
   "module": "Adilqadri",
   "doctype": "DocType",
   "issingle": 1,
@@ -59,7 +59,7 @@
       "fieldname": "facilities",
       "fieldtype": "Table",
       "label": "Facilities",
-      "options": "Unicommerce Facility"
+      "options": "Uniware Connector Facility"
     },
     {
       "fieldname": "sb_token",

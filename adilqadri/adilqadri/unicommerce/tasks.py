@@ -2,7 +2,7 @@
 Scheduled sync stubs for Unicommerce integration.
 
 The scheduler fires `scheduled_sync` every 15 minutes. It checks
-Unicommerce Settings to decide which sync flows are enabled, then
+Uniware Connector Settings to decide which sync flows are enabled, then
 dispatches to the appropriate handlers.
 
 Actual sync bodies (inventory push, order pull) are stubbed — they
@@ -17,7 +17,7 @@ from adilqadri.adilqadri.unicommerce.client import UniwareAPIError, UniwareClien
 
 
 def scheduled_sync():
-	settings = frappe.get_single("Unicommerce Settings")
+	settings = frappe.get_single("Uniware Connector Settings")
 	if not settings.enabled:
 		return
 
@@ -31,7 +31,7 @@ def scheduled_sync():
 		return
 
 	frappe.db.set_value(
-		"Unicommerce Settings", None, "last_sync_at", now_datetime(), update_modified=False
+		"Uniware Connector Settings", None, "last_sync_at", now_datetime(), update_modified=False
 	)
 	frappe.db.commit()
 

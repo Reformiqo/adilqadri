@@ -1,7 +1,7 @@
 // Copyright (c) 2026, erpera and contributors
 // For license information, please see license.txt
 
-frappe.ui.form.on("Unicommerce Settings", {
+frappe.ui.form.on("Uniware Connector Settings", {
 	refresh(frm) {
 		frm.add_custom_button(__("Test OAuth Token"), () => {
 			frappe.dom.freeze(__("Fetching token from Uniware…"));
