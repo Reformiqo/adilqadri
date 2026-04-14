@@ -136,6 +136,46 @@ def verify_schema():
 		print("  Item.channel_item_codes: MISSING")
 
 
+def install_custom_fields():
+	"""
+	Manually load the Custom Field fixture. `bench migrate` only auto-imports
+	fixtures on first install of an app; subsequent migrations don't re-import,
+	so this helper is needed when adding new custom fields mid-lifecycle.
+	"""
+	import json
+	import os
+
+	from frappe.custom.doctype.custom_field.custom_field import create_custom_field
+
+	fixture_path = os.path.join(
+		frappe.get_app_path("adilqadri"), "adilqadri", "fixtures", "custom_field.json"
+	)
+	with open(fixture_path) as f:
+		entries = json.load(f)
+
+	for entry in entries:
+		entry = dict(entry)
+		dt = entry.pop("dt")
+		entry.pop("doctype", None)
+		fieldname = entry["fieldname"]
+		existing = frappe.db.get_value(
+			"Custom Field", {"dt": dt, "fieldname": fieldname}, "name"
+		)
+		if existing:
+			doc = frappe.get_doc("Custom Field", existing)
+			for k, v in entry.items():
+				setattr(doc, k, v)
+			doc.save(ignore_permissions=True)
+			print(f"updated: {dt}.{fieldname}")
+		else:
+			create_custom_field(dt, entry)
+			print(f"created: {dt}.{fieldname}")
+
+	frappe.db.commit()
+	frappe.clear_cache(doctype="Item")
+	print("Item cache cleared.")
+
+
 def setup_and_test():
 	"""Run the full sequence. The password MUST be configured by the caller."""
 	verify_schema()

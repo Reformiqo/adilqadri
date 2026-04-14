@@ -21,7 +21,7 @@ from datetime import timedelta
 
 import frappe
 import requests
-from frappe.utils import now_datetime
+from frappe.utils import get_datetime, now_datetime
 
 TOKEN_PATH = "/oauth/token"
 REFRESH_SAFETY_SECONDS = 120
@@ -119,11 +119,13 @@ def get_access_token() -> str:
 		raise UnicommerceAuthError("Unicommerce integration is disabled")
 
 	cached = settings.get_password("access_token", raise_exception=False)
-	expires_at = settings.token_expires_at
+	expires_at = get_datetime(settings.token_expires_at) if settings.token_expires_at else None
 	if cached and expires_at and (expires_at - now_datetime()).total_seconds() > REFRESH_SAFETY_SECONDS:
 		return cached
 
-	refresh_expires_at = settings.refresh_expires_at
+	refresh_expires_at = (
+		get_datetime(settings.refresh_expires_at) if settings.refresh_expires_at else None
+	)
 	rt = settings.get_password("refresh_token", raise_exception=False)
 	if rt and refresh_expires_at and refresh_expires_at > now_datetime():
 		try:
