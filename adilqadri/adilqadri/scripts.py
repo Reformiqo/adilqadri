@@ -1,10 +1,13 @@
 """
-One-shot helpers for configuring and live-testing the Uniware integration
-from a bench execute call. Not imported anywhere else.
+One-shot helpers for configuring, inspecting, and live-testing the Uniware
+integration from a bench execute call. Not imported by runtime code.
 
 Usage:
     bench --site <site> execute adilqadri.adilqadri.scripts.setup_and_test
+    bench --site <site> execute adilqadri.adilqadri.scripts.probe_order
 """
+
+import json
 
 import frappe
 
@@ -34,7 +37,6 @@ SEED_FACILITIES = [
 
 
 def seed_sales_channels():
-	"""Idempotent: insert seed sales channels if missing."""
 	created = 0
 	for code, name, platform in SEED_CHANNELS:
 		if frappe.db.exists("Sales Channel", code):
@@ -53,11 +55,6 @@ def seed_sales_channels():
 
 
 def seed_connector_settings(password: str | None = None):
-	"""
-	Configure the Uniware Connector Settings single doctype with
-	sensible defaults for the adilqadri tenant. Password should be
-	passed explicitly — we never hard-code it here.
-	"""
 	s = frappe.get_single("Uniware Connector Settings")
 	s.enabled = 1
 	s.tenant_url = DEFAULT_TENANT
@@ -86,7 +83,6 @@ def seed_connector_settings(password: str | None = None):
 
 
 def live_test():
-	"""Call test_oauth and test_rest_call, print results."""
 	s = frappe.get_single("Uniware Connector Settings")
 	print("\n--- test_oauth ---")
 	try:
@@ -109,7 +105,6 @@ def live_test():
 
 
 def verify_schema():
-	"""Print doctype presence and Item custom field state."""
 	print("\n--- doctypes ---")
 	for dt in [
 		"Uniware Connector Settings",
@@ -137,12 +132,7 @@ def verify_schema():
 
 
 def install_custom_fields():
-	"""
-	Manually load the Custom Field fixture. `bench migrate` only auto-imports
-	fixtures on first install of an app; subsequent migrations don't re-import,
-	so this helper is needed when adding new custom fields mid-lifecycle.
-	"""
-	import json
+	"""Manually load Custom Field fixture. Needed when adding fields after install."""
 	import os
 
 	from frappe.custom.doctype.custom_field.custom_field import create_custom_field
@@ -173,11 +163,109 @@ def install_custom_fields():
 
 	frappe.db.commit()
 	frappe.clear_cache(doctype="Item")
-	print("Item cache cleared.")
+	frappe.clear_cache(doctype="Sales Order")
+	frappe.clear_cache(doctype="Sales Order Item")
+	print("Caches cleared.")
+
+
+def probe_order():
+	"""
+	Fetch ONE real sale order via the search endpoint and dump its full
+	structure so we know exactly what fields to map. Run this BEFORE writing
+	order_pull.py so we build against real data, not guesswork.
+	"""
+	from adilqadri.adilqadri.unicommerce.auth import get_access_token
+	import requests
+
+	settings = frappe.get_single("Uniware Connector Settings")
+	tenant = settings.tenant_url.rstrip("/")
+	token = get_access_token()
+	headers = {
+		"Authorization": f"Bearer {token}",
+		"Content-Type": "application/json",
+	}
+
+	# Step 1: search for recent orders, tiny page
+	print("=== STEP 1: saleOrder/search (last 10 mins, first 2 results) ===")
+	r = requests.post(
+		f"{tenant}/services/rest/v1/oms/saleOrder/search",
+		json={
+			"updatedSinceInMinutes": 10,
+			"searchOptions": {"displayStart": 0, "displayLength": 2, "getCount": True},
+		},
+		headers=headers,
+		timeout=30,
+	)
+	print(f"HTTP {r.status_code}")
+	search_data = r.json()
+	total = search_data.get("totalRecords")
+	elements = search_data.get("elements") or []
+	print(f"totalRecords in last 10 min: {total}")
+	print(f"returned: {len(elements)} order summary rows")
+	if elements:
+		print("first summary keys:", sorted(elements[0].keys()))
+		print("first summary sample:")
+		print(json.dumps(elements[0], indent=2, default=str)[:1500])
+
+	if not elements:
+		print("No recent orders — widening to 60 minutes")
+		r = requests.post(
+			f"{tenant}/services/rest/v1/oms/saleOrder/search",
+			json={
+				"updatedSinceInMinutes": 60,
+				"searchOptions": {"displayStart": 0, "displayLength": 2, "getCount": True},
+			},
+			headers=headers,
+			timeout=30,
+		)
+		search_data = r.json()
+		elements = search_data.get("elements") or []
+		print(f"returned: {len(elements)} order summary rows")
+
+	if not elements:
+		print("Still no orders — aborting probe.")
+		return
+
+	sample_code = elements[0].get("code")
+	print(f"\n=== STEP 2: saleOrder/get with code={sample_code} ===")
+	r = requests.post(
+		f"{tenant}/services/rest/v1/oms/saleorder/get",
+		json={"code": sample_code},
+		headers=headers,
+		timeout=30,
+	)
+	print(f"HTTP {r.status_code}")
+	detail = r.json()
+	if detail.get("successful"):
+		dto = detail.get("saleOrderDTO") or detail.get("saleOrder") or {}
+		print("saleOrderDTO top-level keys:", sorted(dto.keys()))
+		# Redact PII but keep structure
+		print("\n--- full DTO (first 4000 chars, PII-scrubbed) ---")
+		scrubbed = _scrub_pii(dto)
+		print(json.dumps(scrubbed, indent=2, default=str)[:4000])
+	else:
+		print("ERROR:", detail.get("errors"))
+
+
+def _scrub_pii(obj):
+	"""Recursively mask obvious PII fields so they don't leak in logs."""
+	if isinstance(obj, dict):
+		return {
+			k: (
+				"***"
+				if k.lower()
+				in {"name", "phone", "mobile", "email", "pincode", "addressline1", "addressline2", "city", "gstin"}
+				and isinstance(v, str)
+				else _scrub_pii(v)
+			)
+			for k, v in obj.items()
+		}
+	if isinstance(obj, list):
+		return [_scrub_pii(v) for v in obj]
+	return obj
 
 
 def setup_and_test():
-	"""Run the full sequence. The password MUST be configured by the caller."""
 	verify_schema()
 	seed_sales_channels()
 	seed_connector_settings()
