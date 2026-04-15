@@ -8,7 +8,9 @@ Flow:
 3. Fetch full order via POST /services/rest/v1/oms/saleorder/get.
 4. Auto-create Sales Channel record if this channel is new.
 5. Resolve each line item via Channel Item Code child table (FRD §8.2)
-   with fallbacks to sellerSkuCode and then direct ERPNext Item match.
+   with fallbacks: sellerSkuCode → direct ERPNext item_code match →
+   normalized-name match against existing ERPNext items → optional
+   auto-create of a new ERPNext item with Uniware's data.
 6. Auto-create a per-channel Customer if missing.
 7. Create ERPNext Sales Order with Uniware metadata in custom fields.
 
@@ -17,6 +19,8 @@ so you can verify resolution before flipping to live.
 """
 
 from __future__ import annotations
+
+import re
 
 import frappe
 from frappe.utils import add_days, now_datetime, nowdate
@@ -34,7 +38,7 @@ UNIWARE_LINE_SKU_FIELD = "uniware_item_sku"
 
 
 @frappe.whitelist()
-def pull_orders(updated_since_minutes=60, limit=10, dry_run=1):
+def pull_orders(updated_since_minutes=60, limit=10, dry_run=1, auto_create_items=0):
 	"""
 	Pull recent sale orders from Uniware.
 
@@ -42,6 +46,10 @@ def pull_orders(updated_since_minutes=60, limit=10, dry_run=1):
 	    updated_since_minutes: Only fetch orders updated in the last N minutes.
 	    limit: Max number of orders to process in this run.
 	    dry_run: 1 = preview only, 0 = actually create Sales Orders.
+	    auto_create_items: 1 = if an order line's item can't be matched
+	        against an existing ERPNext Item (via channel code, item_code,
+	        or normalized name), create a new ERPNext Item using Uniware's
+	        itemSku + itemName. 0 = raise an error and skip the order.
 
 	Returns:
 	    dict summary with counts and a sample preview.
@@ -49,6 +57,7 @@ def pull_orders(updated_since_minutes=60, limit=10, dry_run=1):
 	updated_since_minutes = int(updated_since_minutes)
 	limit = int(limit)
 	dry_run = bool(int(dry_run))
+	auto_create_items = bool(int(auto_create_items))
 
 	client = UniwareClient()
 	default_company = _default_company()
@@ -72,13 +81,18 @@ def pull_orders(updated_since_minutes=60, limit=10, dry_run=1):
 	result = {
 		"ok": True,
 		"dry_run": dry_run,
+		"auto_create_items": auto_create_items,
 		"total_matching": total_matching,
 		"fetched": len(elements),
 		"created": 0,
 		"skipped_exists": 0,
+		"items_created": 0,
+		"mappings_created": 0,
 		"errors": [],
 		"sample": [],
 	}
+
+	resolve_stats = {"items_created": 0, "mappings_created": 0}
 
 	for summary in elements:
 		order_code = summary.get("code")
@@ -100,7 +114,9 @@ def pull_orders(updated_since_minutes=60, limit=10, dry_run=1):
 			continue
 
 		try:
-			prepared = _prepare_sales_order(dto, default_company)
+			prepared = _prepare_sales_order(
+				dto, default_company, auto_create_items, resolve_stats
+			)
 		except Exception as e:
 			result["errors"].append(
 				{"code": order_code, "stage": "prepare", "error": f"{type(e).__name__}: {e}"}
@@ -125,6 +141,7 @@ def pull_orders(updated_since_minutes=60, limit=10, dry_run=1):
 							"qty": r["qty"],
 							"rate": r["rate"],
 							"uniware_sku": r["uniware_item_sku"],
+							"resolved_via": r.get("resolved_via"),
 						}
 						for r in prepared["items"][:5]
 					],
@@ -143,6 +160,9 @@ def pull_orders(updated_since_minutes=60, limit=10, dry_run=1):
 				result["errors"].append(
 					{"code": order_code, "stage": "create", "error": f"{type(e).__name__}: {e}"}
 				)
+
+	result["items_created"] = resolve_stats["items_created"]
+	result["mappings_created"] = resolve_stats["mappings_created"]
 
 	if not dry_run:
 		frappe.db.commit()
@@ -164,11 +184,16 @@ def _order_already_synced(order_code):
 	return bool(frappe.db.exists("Sales Order", {UNIWARE_ORDER_CODE_FIELD: order_code}))
 
 
-def _prepare_sales_order(dto, default_company):
+def _prepare_sales_order(dto, default_company, auto_create_items, resolve_stats):
 	channel_str = dto.get("channel") or ""
 	sales_channel = _ensure_sales_channel(channel_str)
 	customer = _ensure_customer(sales_channel)
-	items = _resolve_items(sales_channel, dto.get("saleOrderItems") or [])
+	items = _resolve_items(
+		sales_channel,
+		dto.get("saleOrderItems") or [],
+		auto_create_items=auto_create_items,
+		resolve_stats=resolve_stats,
+	)
 	if not items:
 		raise ValueError(f"no resolvable items on order {dto.get('code')}")
 
@@ -188,10 +213,6 @@ def _prepare_sales_order(dto, default_company):
 
 
 def _ensure_sales_channel(uniware_channel):
-	"""
-	If a Sales Channel record doesn't exist with channel_code == uniware_channel,
-	create one so future orders through this channel are mapped automatically.
-	"""
 	if not uniware_channel:
 		return None
 	if frappe.db.exists("Sales Channel", uniware_channel):
@@ -207,10 +228,6 @@ def _ensure_sales_channel(uniware_channel):
 
 
 def _ensure_customer(channel):
-	"""
-	MVP: one generic Customer per channel. Named "Uniware - <CHANNEL>".
-	Switch to per-buyer customers in a later iteration if needed.
-	"""
 	name = f"Uniware - {channel or 'Unknown'}"
 	if frappe.db.exists("Customer", name):
 		return name
@@ -231,34 +248,42 @@ def _ensure_customer(channel):
 	return name
 
 
-def _resolve_items(sales_channel, uniware_items):
+def _resolve_items(sales_channel, uniware_items, auto_create_items, resolve_stats):
 	"""
 	Resolution chain for each Uniware line:
 	  1. Channel Item Code (channel, channelProductId)
 	  2. Channel Item Code (channel, sellerSkuCode)
 	  3. ERPNext Item where item_code == Uniware itemSku
-	Raises ValueError with enough context to debug if nothing matches.
+	  4. ERPNext Item matched by normalized item_name against Uniware itemName
+	     → auto-create Channel Item Code mapping on that Item
+	  5. If auto_create_items: create new ERPNext Item + mapping
 	"""
 	resolved = []
 	for li in uniware_items:
 		channel_product_id = li.get("channelProductId")
 		seller_sku = li.get("sellerSkuCode")
 		item_sku = li.get("itemSku")
+		item_name = li.get("itemName") or ""
 
-		item_code = (
-			_lookup_channel_item_code(sales_channel, channel_product_id)
-			or _lookup_channel_item_code(sales_channel, seller_sku)
-			or _lookup_by_item_code(item_sku)
+		# Chain of resolvers
+		item_code, resolved_via = _try_all_resolvers(
+			sales_channel=sales_channel,
+			channel_product_id=channel_product_id,
+			seller_sku=seller_sku,
+			item_sku=item_sku,
+			item_name=item_name,
+			auto_create=auto_create_items,
+			resolve_stats=resolve_stats,
 		)
+
 		if not item_code:
 			raise ValueError(
 				f"unresolved item: channel={sales_channel}, "
 				f"channelProductId={channel_product_id}, sellerSkuCode={seller_sku}, "
-				f"itemSku={item_sku}"
+				f"itemSku={item_sku}, itemName={item_name!r}"
 			)
 
-		# Guard: templates can't be used on Sales Order lines. Reject with a
-		# clearer error than ERPNext's generic ValidationError.
+		# Guard: templates can't be used on Sales Order lines.
 		if frappe.db.get_value("Item", item_code, "has_variants"):
 			raise ValueError(
 				f"mapped item '{item_code}' is a Template with variants; point the "
@@ -274,9 +299,66 @@ def _resolve_items(sales_channel, uniware_items):
 				"rate": rate,
 				"uniware_item_code": li.get("code"),
 				"uniware_item_sku": item_sku,
+				"resolved_via": resolved_via,
 			}
 		)
 	return resolved
+
+
+def _try_all_resolvers(
+	sales_channel,
+	channel_product_id,
+	seller_sku,
+	item_sku,
+	item_name,
+	auto_create,
+	resolve_stats,
+):
+	"""Return (item_code, resolved_via) or (None, None)."""
+
+	# 1. Channel Item Code by channelProductId
+	code = _lookup_channel_item_code(sales_channel, channel_product_id)
+	if code:
+		return code, "channel_item_code:channelProductId"
+
+	# 2. Channel Item Code by sellerSkuCode
+	code = _lookup_channel_item_code(sales_channel, seller_sku)
+	if code:
+		return code, "channel_item_code:sellerSkuCode"
+
+	# 3. Direct item_code match on Uniware itemSku
+	code = _lookup_by_item_code(item_sku)
+	if code:
+		return code, "item_code_exact"
+
+	# 4. Name-match against existing ERPNext items, then auto-add mapping
+	if item_name:
+		matched = _lookup_by_normalized_name(item_name)
+		if matched:
+			_add_channel_item_code_row(
+				matched,
+				sales_channel,
+				channel_product_id or seller_sku,
+				item_name,
+			)
+			resolve_stats["mappings_created"] += 1
+			return matched, "name_match"
+
+	# 5. Last resort: create a brand-new ERPNext Item from Uniware data
+	if auto_create and item_sku:
+		new_code = _auto_create_item(item_sku, item_name, li_rate=None)
+		if new_code:
+			_add_channel_item_code_row(
+				new_code,
+				sales_channel,
+				channel_product_id or seller_sku or item_sku,
+				item_name,
+			)
+			resolve_stats["items_created"] += 1
+			resolve_stats["mappings_created"] += 1
+			return new_code, "auto_created"
+
+	return None, None
 
 
 def _lookup_channel_item_code(channel, product_code):
@@ -301,6 +383,108 @@ def _lookup_by_item_code(item_sku):
 	if frappe.db.exists("Item", item_sku):
 		return item_sku
 	return None
+
+
+_NORMALIZE_NAME_CACHE: dict[str, str] = {}
+
+
+def _normalize_name(name: str) -> str:
+	if not name:
+		return ""
+	s = name.lower()
+	# Replace non-word characters with space
+	s = re.sub(r"[^\w\s]", " ", s)
+	# Collapse whitespace
+	s = re.sub(r"\s+", " ", s).strip()
+	return s
+
+
+def _build_name_index() -> dict[str, str]:
+	"""Build a normalized-name → item_code index of current ERPNext items."""
+	index: dict[str, str] = {}
+	rows = frappe.get_all(
+		"Item",
+		filters={"disabled": 0, "has_variants": 0, "is_sales_item": 1},
+		fields=["name", "item_name"],
+	)
+	for r in rows:
+		key = _normalize_name(r.item_name or r.name)
+		if key and key not in index:
+			index[key] = r.name
+	return index
+
+
+def _lookup_by_normalized_name(uniware_name: str) -> str | None:
+	key = _normalize_name(uniware_name)
+	if not key:
+		return None
+	# Per-request cache of the index since the pull may process many orders
+	request_cache = getattr(frappe.local, "adilqadri_name_index", None)
+	if request_cache is None:
+		request_cache = _build_name_index()
+		frappe.local.adilqadri_name_index = request_cache
+	return request_cache.get(key)
+
+
+def _add_channel_item_code_row(item_code, channel, channel_product_code, channel_item_name):
+	"""Append a Channel Item Code row to an existing Item if not already present."""
+	if not item_code or not channel or not channel_product_code:
+		return
+	item = frappe.get_doc("Item", item_code)
+	for row in item.get("channel_item_codes") or []:
+		if row.channel == channel and row.channel_product_code == channel_product_code:
+			return  # already mapped
+	item.append(
+		"channel_item_codes",
+		{
+			"channel": channel,
+			"channel_product_code": channel_product_code,
+			"channel_item_name": (channel_item_name or "")[:140] or None,
+			"is_active": 1,
+			"sync_status": "Synced",
+			"last_sync_at": now_datetime(),
+			"remarks": "Auto-mapped from Uniware order pull",
+		},
+	)
+	item.flags.ignore_permissions = True
+	item.flags.ignore_mandatory = True
+	item.save(ignore_permissions=True)
+	# Invalidate the request-level name index
+	if hasattr(frappe.local, "adilqadri_name_index"):
+		delattr(frappe.local, "adilqadri_name_index")
+
+
+def _auto_create_item(uniware_sku, uniware_name, li_rate=None):
+	"""
+	Create a new ERPNext Item using Uniware data. Uses the Uniware SKU
+	as the ERPNext item_code for stability (guaranteed unique, matches
+	what Uniware will send on future orders).
+	"""
+	if not uniware_sku:
+		return None
+	if frappe.db.exists("Item", uniware_sku):
+		return uniware_sku
+
+	default_group = (
+		frappe.db.get_value("Item Group", {"is_group": 0, "name": "Products"}, "name")
+		or frappe.db.get_value("Item Group", {"is_group": 0}, "name")
+		or "All Item Groups"
+	)
+
+	doc = frappe.new_doc("Item")
+	doc.item_code = uniware_sku
+	doc.item_name = (uniware_name or uniware_sku)[:140]
+	doc.item_group = default_group
+	doc.stock_uom = "Nos"
+	doc.is_sales_item = 1
+	doc.is_stock_item = 1
+	doc.include_item_in_manufacturing = 0
+	if li_rate:
+		doc.standard_rate = li_rate
+	doc.flags.ignore_permissions = True
+	doc.flags.ignore_mandatory = True
+	doc.insert(ignore_permissions=True)
+	return doc.name
 
 
 def _create_sales_order(dto, prepared):
