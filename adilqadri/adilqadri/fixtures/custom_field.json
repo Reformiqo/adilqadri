@@ -27,5 +27,104 @@
     "insert_after": "channel_item_codes_section",
     "module": "Adilqadri",
     "description": "Per-channel product code mapping (Unicommerce Ch1/Ch2, Amazon, Flipkart, etc.)"
+  },
+
+  {
+    "doctype": "Custom Field",
+    "dt": "Sales Order",
+    "fieldname": "uniware_section",
+    "label": "Uniware Sync",
+    "fieldtype": "Section Break",
+    "insert_after": "amended_from",
+    "collapsible": 1,
+    "module": "Adilqadri"
+  },
+  {
+    "doctype": "Custom Field",
+    "dt": "Sales Order",
+    "fieldname": "uniware_order_code",
+    "label": "Uniware Order Code",
+    "fieldtype": "Data",
+    "insert_after": "uniware_section",
+    "read_only": 1,
+    "unique": 1,
+    "no_copy": 1,
+    "search_index": 1,
+    "module": "Adilqadri",
+    "description": "Unique Uniware saleOrder code. Enforced unique by DB."
+  },
+  {
+    "doctype": "Custom Field",
+    "dt": "Sales Order",
+    "fieldname": "uniware_display_order_code",
+    "label": "Uniware Display Order Code",
+    "fieldtype": "Data",
+    "insert_after": "uniware_order_code",
+    "read_only": 1,
+    "search_index": 1,
+    "module": "Adilqadri",
+    "description": "Channel's human-readable order code (e.g. Amazon order number, Shopify display code)."
+  },
+  {
+    "doctype": "Custom Field",
+    "dt": "Sales Order",
+    "fieldname": "uniware_channel",
+    "label": "Uniware Channel",
+    "fieldtype": "Link",
+    "options": "Sales Channel",
+    "insert_after": "uniware_display_order_code",
+    "read_only": 1,
+    "module": "Adilqadri"
+  },
+  {
+    "doctype": "Custom Field",
+    "dt": "Sales Order",
+    "fieldname": "uniware_facility_code",
+    "label": "Uniware Facility Code",
+    "fieldtype": "Data",
+    "insert_after": "uniware_channel",
+    "read_only": 1,
+    "module": "Adilqadri"
+  },
+  {
+    "doctype": "Custom Field",
+    "dt": "Sales Order",
+    "fieldname": "uniware_status",
+    "label": "Uniware Status",
+    "fieldtype": "Data",
+    "insert_after": "uniware_facility_code",
+    "read_only": 1,
+    "module": "Adilqadri"
+  },
+  {
+    "doctype": "Custom Field",
+    "dt": "Sales Order",
+    "fieldname": "uniware_last_synced_at",
+    "label": "Uniware Last Synced At",
+    "fieldtype": "Datetime",
+    "insert_after": "uniware_status",
+    "read_only": 1,
+    "module": "Adilqadri"
+  },
+
+  {
+    "doctype": "Custom Field",
+    "dt": "Sales Order Item",
+    "fieldname": "uniware_item_code",
+    "label": "Uniware Line Code",
+    "fieldtype": "Data",
+    "insert_after": "item_code",
+    "read_only": 1,
+    "module": "Adilqadri"
+  },
+  {
+    "doctype": "Custom Field",
+    "dt": "Sales Order Item",
+    "fieldname": "uniware_item_sku",
+    "label": "Uniware Item SKU",
+    "fieldtype": "Data",
+    "insert_after": "uniware_item_code",
+    "read_only": 1,
+    "module": "Adilqadri"
   }
 ]

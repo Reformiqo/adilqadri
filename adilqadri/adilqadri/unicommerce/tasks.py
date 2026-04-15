@@ -1,19 +1,16 @@
 """
-Scheduled sync stubs for Unicommerce integration.
+Scheduled sync dispatcher for Unicommerce integration.
 
 The scheduler fires `scheduled_sync` every 15 minutes. It checks
 Uniware Connector Settings to decide which sync flows are enabled, then
 dispatches to the appropriate handlers.
-
-Actual sync bodies (inventory push, order pull) are stubbed — they
-will be implemented once the foundation is verified end-to-end with
-a live connection test.
 """
 
 import frappe
 from frappe.utils import now_datetime
 
 from adilqadri.adilqadri.unicommerce.client import UniwareAPIError, UniwareClient
+from adilqadri.adilqadri.unicommerce.order_pull import pull_orders
 
 
 def scheduled_sync():
@@ -25,13 +22,17 @@ def scheduled_sync():
 		if settings.sync_inventory:
 			push_inventory(settings)
 		if settings.pull_sale_orders:
-			pull_sale_orders(settings)
+			scheduled_pull_sale_orders(settings)
 	except UniwareAPIError as e:
 		frappe.log_error(title="Unicommerce sync failed", message=str(e))
 		return
 
 	frappe.db.set_value(
-		"Uniware Connector Settings", None, "last_sync_at", now_datetime(), update_modified=False
+		"Uniware Connector Settings",
+		None,
+		"last_sync_at",
+		now_datetime(),
+		update_modified=False,
 	)
 	frappe.db.commit()
 
@@ -46,12 +47,16 @@ def push_inventory(settings):
 	return
 
 
-def pull_sale_orders(settings):
+def scheduled_pull_sale_orders(settings):
 	"""
-	TODO: call /services/rest/v1/oms/saleOrder/search with a time window,
-	for each returned order resolve items via item_mapping.get_item_by_channel_code,
-	and create an ERPNext Sales Order.
-	Stub — no-op for now.
+	Pull orders updated in the last `sync_frequency_minutes * 2` minutes
+	(2x buffer to handle missed runs). Limit per run is 50 orders —
+	tune via Uniware Connector Settings once we see real traffic.
 	"""
-	UniwareClient()
-	return
+	lookback = max((settings.sync_frequency_minutes or 15) * 2, 30)
+	result = pull_orders(updated_since_minutes=lookback, limit=50, dry_run=0)
+	if result.get("errors"):
+		frappe.log_error(
+			title="Uniware order pull — partial errors",
+			message=f"created={result.get('created')}, errors={result.get('errors')}",
+		)
