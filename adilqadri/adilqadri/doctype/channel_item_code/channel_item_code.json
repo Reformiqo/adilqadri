@@ -29,15 +29,39 @@
       "fieldtype": "Data",
       "label": "Channel Item Name",
       "in_list_view": 1,
-      "columns": 3
+      "columns": 2
     },
     {
       "fieldname": "is_active",
       "fieldtype": "Check",
-      "label": "Is Active",
+      "label": "Sync Enabled",
       "default": "1",
       "in_list_view": 1,
-      "columns": 1
+      "columns": 1,
+      "description": "If unchecked, this mapping is ignored by both order pull and item push."
+    },
+    {
+      "fieldname": "sync_status",
+      "fieldtype": "Select",
+      "label": "Sync Status",
+      "options": "Not Synced\nSynced\nFailed\nSkipped",
+      "default": "Not Synced",
+      "read_only": 1,
+      "in_list_view": 1,
+      "columns": 2,
+      "description": "Last push result: did the item make it to this channel in Uniware?"
+    },
+    {
+      "fieldname": "last_sync_at",
+      "fieldtype": "Datetime",
+      "label": "Last Sync At",
+      "read_only": 1
+    },
+    {
+      "fieldname": "last_sync_error",
+      "fieldtype": "Small Text",
+      "label": "Last Sync Error",
+      "read_only": 1
     },
     {
       "fieldname": "remarks",

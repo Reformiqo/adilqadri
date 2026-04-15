@@ -12,6 +12,11 @@ doc_events = {
 	},
 }
 
+# Custom JS injected into the Item form — adds the "Sync to Uniware" button
+doctype_js = {
+	"Item": "public/js/item.js",
+}
+
 # Fixtures — export the Channel Mapping tab + child table on Item
 fixtures = [
 	{"dt": "Custom Field", "filters": [["module", "=", "Adilqadri"]]},
