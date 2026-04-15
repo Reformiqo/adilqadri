@@ -265,6 +265,99 @@ def _scrub_pii(obj):
 	return obj
 
 
+def create_demo_mapping():
+	"""
+	Create ONE Channel Item Code mapping using the first ERPNext item and
+	a known-recent Uniware channel+SKU, then re-run the dry-run so we can
+	see the resolver return "created" instead of errors.
+
+	This proves the end-to-end flow works. Real mappings must be entered
+	by the data team or imported from a CSV.
+	"""
+	# Pick the first real ERPNext item (not a service)
+	item_code = frappe.db.get_value(
+		"Item",
+		{"disabled": 0, "is_sales_item": 1},
+		"name",
+		order_by="creation asc",
+	)
+	if not item_code:
+		print("No ERPNext item found to use for the demo mapping.")
+		return
+
+	# Pick the first unresolved Uniware order and use its first line
+	from adilqadri.adilqadri.unicommerce.auth import get_access_token
+	import requests
+
+	settings = frappe.get_single("Uniware Connector Settings")
+	tenant = settings.tenant_url.rstrip("/")
+	headers = {
+		"Authorization": f"Bearer {get_access_token()}",
+		"Content-Type": "application/json",
+	}
+	search = requests.post(
+		f"{tenant}/services/rest/v1/oms/saleOrder/search",
+		json={"updatedSinceInMinutes": 60, "searchOptions": {"displayStart": 0, "displayLength": 1}},
+		headers=headers,
+		timeout=30,
+	).json()
+	elements = search.get("elements") or []
+	if not elements:
+		print("No recent Uniware orders to borrow a SKU from.")
+		return
+
+	order_code = elements[0]["code"]
+	detail = requests.post(
+		f"{tenant}/services/rest/v1/oms/saleorder/get",
+		json={"code": order_code},
+		headers=headers,
+		timeout=30,
+	).json()
+	dto = detail.get("saleOrderDTO") or {}
+	line = (dto.get("saleOrderItems") or [None])[0]
+	if not line:
+		print("First order has no line items.")
+		return
+
+	channel = dto.get("channel")
+	channel_product_code = line.get("sellerSkuCode") or line.get("channelProductId")
+	if not channel or not channel_product_code:
+		print(f"Missing data: channel={channel}, code={channel_product_code}")
+		return
+
+	# Ensure the Sales Channel exists
+	if not frappe.db.exists("Sales Channel", channel):
+		ch = frappe.new_doc("Sales Channel")
+		ch.channel_code = channel
+		ch.channel_name = channel.replace("_", " ").title()
+		ch.platform = "Other"
+		ch.is_active = 1
+		ch.insert(ignore_permissions=True)
+		print(f"Auto-created Sales Channel: {channel}")
+
+	# Add a Channel Item Code row to the ERPNext item
+	item = frappe.get_doc("Item", item_code)
+	existing = [r for r in (item.get("channel_item_codes") or []) if r.channel == channel and r.channel_product_code == channel_product_code]
+	if existing:
+		print(f"Mapping already exists: {item_code} → ({channel}, {channel_product_code})")
+	else:
+		item.append(
+			"channel_item_codes",
+			{
+				"channel": channel,
+				"channel_product_code": channel_product_code,
+				"is_active": 1,
+				"remarks": "Demo mapping created by scripts.create_demo_mapping",
+			},
+		)
+		item.flags.ignore_permissions = True
+		item.flags.ignore_mandatory = True
+		item.save(ignore_permissions=True)
+		frappe.db.commit()
+		print(f"Created mapping: {item_code} → ({channel}, {channel_product_code})")
+	return {"item_code": item_code, "channel": channel, "channel_product_code": channel_product_code}
+
+
 def setup_and_test():
 	verify_schema()
 	seed_sales_channels()
