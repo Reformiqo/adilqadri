@@ -415,13 +415,14 @@ def prime_mappings_from_recent_orders(count: int = 5):
 
 	print(f"Distinct (channel, product_code) pairs: {len(pairs)}")
 
-	# Get ERPNext items to borrow
+	# Get ERPNext items to borrow — exclude templates (has_variants=1) because
+	# Sales Order lines reject them; require concrete items/variants only.
 	erp_items = frappe.get_all(
 		"Item",
-		filters={"disabled": 0, "is_sales_item": 1},
+		filters={"disabled": 0, "is_sales_item": 1, "has_variants": 0},
 		fields=["name", "item_name"],
 		order_by="creation asc",
-		limit=max(len(pairs), 10),
+		limit=max(len(pairs) * 2, 20),
 	)
 	if not erp_items:
 		print("No ERPNext items to borrow.")

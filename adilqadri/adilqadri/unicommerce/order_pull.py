@@ -257,6 +257,15 @@ def _resolve_items(sales_channel, uniware_items):
 				f"itemSku={item_sku}"
 			)
 
+		# Guard: templates can't be used on Sales Order lines. Reject with a
+		# clearer error than ERPNext's generic ValidationError.
+		if frappe.db.get_value("Item", item_code, "has_variants"):
+			raise ValueError(
+				f"mapped item '{item_code}' is a Template with variants; point the "
+				f"Channel Item Code mapping at a concrete variant instead. "
+				f"(channel={sales_channel}, code={channel_product_id or seller_sku})"
+			)
+
 		rate = li.get("sellingPrice") or li.get("totalPrice") or 0
 		resolved.append(
 			{
