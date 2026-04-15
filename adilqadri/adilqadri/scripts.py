@@ -358,6 +358,126 @@ def create_demo_mapping():
 	return {"item_code": item_code, "channel": channel, "channel_product_code": channel_product_code}
 
 
+def prime_mappings_from_recent_orders(count: int = 5):
+	"""
+	Fetch `count` most recent Uniware orders and create Channel Item Code
+	mappings for each of their line items, borrowing unused ERPNext items
+	(one ERPNext item per distinct (channel, channel_product_code) key).
+
+	This lets us prove the end-to-end pull works with real order data
+	without requiring the user to hand-enter mappings.
+	"""
+	from adilqadri.adilqadri.unicommerce.auth import get_access_token
+	import requests
+
+	count = int(count)
+	settings = frappe.get_single("Uniware Connector Settings")
+	tenant = settings.tenant_url.rstrip("/")
+	headers = {
+		"Authorization": f"Bearer {get_access_token()}",
+		"Content-Type": "application/json",
+	}
+
+	search = requests.post(
+		f"{tenant}/services/rest/v1/oms/saleOrder/search",
+		json={
+			"updatedSinceInMinutes": 60,
+			"searchOptions": {"displayStart": 0, "displayLength": count},
+		},
+		headers=headers,
+		timeout=30,
+	).json()
+	elements = search.get("elements") or []
+	print(f"Fetched {len(elements)} recent orders for mapping priming")
+
+	# Collect distinct (channel, product_code) pairs
+	pairs: list[tuple[str, str, str]] = []  # (channel, product_code, line_name)
+	seen = set()
+	for summ in elements:
+		order_code = summ["code"]
+		detail = requests.post(
+			f"{tenant}/services/rest/v1/oms/saleorder/get",
+			json={"code": order_code},
+			headers=headers,
+			timeout=30,
+		).json()
+		dto = detail.get("saleOrderDTO") or {}
+		channel = dto.get("channel")
+		for li in dto.get("saleOrderItems") or []:
+			product_code = li.get("sellerSkuCode") or li.get("channelProductId")
+			if not channel or not product_code:
+				continue
+			key = (channel, product_code)
+			if key in seen:
+				continue
+			seen.add(key)
+			pairs.append((channel, product_code, li.get("itemName") or ""))
+
+	print(f"Distinct (channel, product_code) pairs: {len(pairs)}")
+
+	# Get ERPNext items to borrow
+	erp_items = frappe.get_all(
+		"Item",
+		filters={"disabled": 0, "is_sales_item": 1},
+		fields=["name", "item_name"],
+		order_by="creation asc",
+		limit=max(len(pairs), 10),
+	)
+	if not erp_items:
+		print("No ERPNext items to borrow.")
+		return
+
+	created = 0
+	skipped = 0
+	for idx, (channel, product_code, item_name) in enumerate(pairs):
+		erp_item_code = erp_items[idx % len(erp_items)]["name"]
+
+		# Ensure Sales Channel exists
+		if not frappe.db.exists("Sales Channel", channel):
+			ch = frappe.new_doc("Sales Channel")
+			ch.channel_code = channel
+			ch.channel_name = channel.replace("_", " ").title()
+			ch.platform = "Other"
+			ch.is_active = 1
+			ch.insert(ignore_permissions=True)
+
+		# Skip if mapping already exists on any item
+		existing = frappe.db.get_value(
+			"Channel Item Code",
+			{
+				"parenttype": "Item",
+				"parentfield": "channel_item_codes",
+				"channel": channel,
+				"channel_product_code": product_code,
+			},
+			"parent",
+		)
+		if existing:
+			skipped += 1
+			print(f"  skip: ({channel}, {product_code}) already mapped to {existing}")
+			continue
+
+		item = frappe.get_doc("Item", erp_item_code)
+		item.append(
+			"channel_item_codes",
+			{
+				"channel": channel,
+				"channel_product_code": product_code,
+				"is_active": 1,
+				"remarks": f"Auto-primed from Uniware: {item_name}"[:140],
+			},
+		)
+		item.flags.ignore_permissions = True
+		item.flags.ignore_mandatory = True
+		item.save(ignore_permissions=True)
+		created += 1
+		print(f"  map: ({channel}, {product_code}) → {erp_item_code}")
+
+	frappe.db.commit()
+	print(f"\nDone. created={created}, skipped={skipped}, total={len(pairs)}")
+	return {"created": created, "skipped": skipped, "total": len(pairs)}
+
+
 def setup_and_test():
 	verify_schema()
 	seed_sales_channels()
