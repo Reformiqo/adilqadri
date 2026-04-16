@@ -193,10 +193,18 @@ def _ensure_customer_and_address(dto, dry_run=False):
 	phone = (billing.get("phone") or dto.get("notificationMobile") or "").strip()
 	email = (billing.get("email") or dto.get("notificationEmail") or "").strip()
 	channel = dto.get("channel") or "Unknown"
+	display_code = dto.get("displayOrderCode") or ""
 
-	# Fallback name if billing address has no name
-	customer_name = raw_name or f"Uniware Customer - {channel}"
-	# Truncate to ERPNext's limit
+	# Flipkart and some marketplaces mask customer PII — the name comes as
+	# "***" or similar. Detect and fall back to a useful identifier.
+	import re
+
+	is_masked = not raw_name or bool(re.fullmatch(r"[\*\.\-_\s]+", raw_name))
+	if is_masked:
+		# Use channel + display order code for a meaningful customer name
+		customer_name = f"{channel} - {display_code}" if display_code else f"Uniware Customer - {channel}"
+	else:
+		customer_name = raw_name
 	customer_name = customer_name[:140]
 
 	if dry_run:
