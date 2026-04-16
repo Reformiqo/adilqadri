@@ -1,21 +1,18 @@
 """
 Pull Sales Invoices from Uniware (Unicommerce) into ERPNext.
 
-Unlike order_pull.py (which creates Sales Orders from any recent order),
-this module creates **Sales Invoices** — the financial/accounting document.
+Creates Sales Invoices with REAL customers and addresses extracted from
+the Uniware order's billingAddress, not generic per-channel placeholders.
 
 Flow:
-1. Search recent orders via saleOrder/search (same API as order pull).
+1. Search recent orders via saleOrder/search.
 2. Skip orders already synced (by uniware_order_code on Sales Invoice).
 3. Fetch full order details via saleOrder/get.
-4. Resolve items via the Channel Item Code child table (same 5-level chain
-   as order_pull, with optional auto-create).
-5. Create ERPNext Sales Invoice with Uniware metadata in custom fields.
-
-The key difference from order_pull: this creates a Sales Invoice (which
-posts to the general ledger) rather than a Sales Order (which is just a
-commitment). For already-fulfilled Uniware orders, Sales Invoices are
-the right document type.
+4. Create/match a real Customer from billingAddress name + phone/email.
+5. Create/match an Address linked to that Customer.
+6. Resolve items via Channel Item Code child table (5-level chain).
+7. Create ERPNext Sales Invoice with real customer, address, and Uniware
+   metadata in custom fields.
 """
 
 from __future__ import annotations
@@ -26,14 +23,10 @@ from frappe.utils import now_datetime, nowdate
 from adilqadri.adilqadri.unicommerce.client import UniwareAPIError, UniwareClient
 from adilqadri.adilqadri.unicommerce.order_pull import (
 	_default_company,
-	_ensure_customer,
 	_ensure_sales_channel,
-	_order_already_synced as _so_already_synced,
 	_resolve_items,
 )
 
-# Reuse the same custom field names from order_pull for consistency.
-# These custom fields must also be added to Sales Invoice (via fixture).
 UNIWARE_ORDER_CODE_FIELD = "uniware_order_code"
 UNIWARE_DISPLAY_CODE_FIELD = "uniware_display_order_code"
 UNIWARE_CHANNEL_FIELD = "uniware_channel"
@@ -46,18 +39,7 @@ UNIWARE_LINE_SKU_FIELD = "uniware_item_sku"
 
 @frappe.whitelist()
 def pull_invoices(updated_since_minutes=60, limit=10, dry_run=1, auto_create_items=0):
-	"""
-	Pull recent sale orders from Uniware and create ERPNext Sales Invoices.
-
-	Args:
-	    updated_since_minutes: Only fetch orders updated in the last N minutes.
-	    limit: Max number of orders to process in this run.
-	    dry_run: 1 = preview only, 0 = actually create Sales Invoices.
-	    auto_create_items: 1 = create ERPNext Items for unresolved SKUs.
-
-	Returns:
-	    dict summary with counts and a sample preview.
-	"""
+	"""Pull recent Uniware orders and create ERPNext Sales Invoices."""
 	updated_since_minutes = int(updated_since_minutes)
 	limit = int(limit)
 	dry_run = bool(int(dry_run))
@@ -102,7 +84,6 @@ def pull_invoices(updated_since_minutes=60, limit=10, dry_run=1, auto_create_ite
 		order_code = summary.get("code")
 		display_code = summary.get("displayOrderCode")
 
-		# Skip if already synced as Sales Invoice
 		if _invoice_already_synced(order_code):
 			result["skipped_exists"] += 1
 			continue
@@ -134,22 +115,11 @@ def pull_invoices(updated_since_minutes=60, limit=10, dry_run=1, auto_create_ite
 					"uniware_code": order_code,
 					"display_code": display_code,
 					"channel": prepared["channel"],
-					"facility": prepared["facility_code"],
 					"customer": prepared["customer"],
 					"item_count": len(prepared["items"]),
 					"total": round(
 						sum(row["qty"] * row["rate"] for row in prepared["items"]), 2
 					),
-					"items": [
-						{
-							"item_code": r["item_code"],
-							"qty": r["qty"],
-							"rate": r["rate"],
-							"uniware_sku": r["uniware_item_sku"],
-							"resolved_via": r.get("resolved_via"),
-						}
-						for r in prepared["items"][:5]
-					],
 				}
 			)
 		else:
@@ -184,7 +154,7 @@ def _invoice_already_synced(order_code):
 def _prepare_invoice(dto, default_company, auto_create_items, resolve_stats, dry_run=False):
 	channel_str = dto.get("channel") or ""
 	sales_channel = _ensure_sales_channel(channel_str, dry_run=dry_run)
-	customer = _ensure_customer(sales_channel, dry_run=dry_run)
+	customer_name, customer_address = _ensure_customer_and_address(dto, dry_run=dry_run)
 	items = _resolve_items(
 		sales_channel,
 		dto.get("saleOrderItems") or [],
@@ -203,22 +173,135 @@ def _prepare_invoice(dto, default_company, auto_create_items, resolve_stats, dry
 
 	return {
 		"company": default_company,
-		"customer": customer,
+		"customer": customer_name,
+		"customer_address": customer_address,
 		"channel": sales_channel,
 		"facility_code": facility_code,
 		"items": items,
 	}
 
 
+def _ensure_customer_and_address(dto, dry_run=False):
+	"""
+	Create or find a Customer + Address from the Uniware order's billing info.
+
+	Deduplication: by (customer_name, phone). If a Customer with the same
+	normalized name + phone exists, reuse it.
+	"""
+	billing = dto.get("billingAddress") or {}
+	raw_name = (billing.get("name") or "").strip()
+	phone = (billing.get("phone") or dto.get("notificationMobile") or "").strip()
+	email = (billing.get("email") or dto.get("notificationEmail") or "").strip()
+	channel = dto.get("channel") or "Unknown"
+
+	# Fallback name if billing address has no name
+	customer_name = raw_name or f"Uniware Customer - {channel}"
+	# Truncate to ERPNext's limit
+	customer_name = customer_name[:140]
+
+	if dry_run:
+		return customer_name, None
+
+	# Try to find existing customer by name
+	existing = frappe.db.get_value("Customer", {"customer_name": customer_name}, "name")
+	if not existing and phone:
+		# Try by phone in Dynamic Link on Contact
+		contact = frappe.db.get_value(
+			"Contact Phone",
+			{"phone": phone, "parenttype": "Contact"},
+			"parent",
+		)
+		if contact:
+			link = frappe.db.get_value(
+				"Dynamic Link",
+				{"parent": contact, "link_doctype": "Customer"},
+				"link_name",
+			)
+			if link:
+				existing = link
+
+	if existing:
+		# Find their address
+		addr = frappe.db.get_value(
+			"Dynamic Link",
+			{"link_doctype": "Customer", "link_name": existing, "parenttype": "Address"},
+			"parent",
+		)
+		return existing, addr
+
+	# Create new Customer
+	default_group = frappe.db.get_value("Customer Group", {"is_group": 0}, "name")
+	default_territory = frappe.db.get_value("Territory", {"is_group": 0}, "name")
+
+	cust = frappe.new_doc("Customer")
+	cust.customer_name = customer_name
+	cust.customer_type = "Individual"
+	if default_group:
+		cust.customer_group = default_group
+	if default_territory:
+		cust.territory = default_territory
+	cust.flags.ignore_permissions = True
+	cust.flags.ignore_mandatory = True
+	cust.insert(ignore_permissions=True)
+
+	# Create Address if we have data
+	addr_name = None
+	if billing.get("addressLine1") or billing.get("city"):
+		addr = frappe.new_doc("Address")
+		addr.address_title = customer_name[:100]
+		addr.address_type = "Billing"
+		addr.address_line1 = (billing.get("addressLine1") or "-")[:140]
+		addr.address_line2 = (billing.get("addressLine2") or "")[:140] or None
+		addr.city = (billing.get("city") or "-")[:140]
+		addr.state = (billing.get("state") or "")[:140] or None
+		addr.pincode = (billing.get("pincode") or "")[:10] or None
+		addr.country = _resolve_country(billing.get("country"))
+		addr.phone = phone or None
+		addr.email_id = email or None
+		addr.append("links", {"link_doctype": "Customer", "link_name": cust.name})
+		addr.flags.ignore_permissions = True
+		addr.flags.ignore_mandatory = True
+		addr.insert(ignore_permissions=True)
+		addr_name = addr.name
+
+	# Create Contact if we have phone or email
+	if phone or email:
+		contact = frappe.new_doc("Contact")
+		parts = customer_name.split(" ", 1)
+		contact.first_name = parts[0][:140]
+		if len(parts) > 1:
+			contact.last_name = parts[1][:140]
+		if phone:
+			contact.append("phone_nos", {"phone": phone, "is_primary_mobile_no": 1})
+		if email:
+			contact.append("email_ids", {"email_id": email, "is_primary": 1})
+		contact.append("links", {"link_doctype": "Customer", "link_name": cust.name})
+		contact.flags.ignore_permissions = True
+		contact.flags.ignore_mandatory = True
+		contact.insert(ignore_permissions=True)
+
+	return cust.name, addr_name
+
+
+def _resolve_country(code):
+	"""Convert 2-letter country code (e.g. 'IN') to ERPNext country name."""
+	if not code:
+		return "India"
+	name = frappe.db.get_value("Country", {"code": code.lower()}, "name")
+	return name or "India"
+
+
 def _create_sales_invoice(dto, prepared):
 	doc = frappe.new_doc("Sales Invoice")
 	doc.customer = prepared["customer"]
+	if prepared.get("customer_address"):
+		doc.customer_address = prepared["customer_address"]
 	if prepared["company"]:
 		doc.company = prepared["company"]
 	doc.posting_date = nowdate()
 	doc.due_date = nowdate()
 	doc.currency = dto.get("currencyCode") or "INR"
-	doc.update_stock = 0  # don't touch stock from invoice pull
+	doc.update_stock = 0
 
 	doc.set(UNIWARE_ORDER_CODE_FIELD, dto.get("code"))
 	doc.set(UNIWARE_DISPLAY_CODE_FIELD, dto.get("displayOrderCode"))
