@@ -498,6 +498,88 @@ def cleanup_demo_data():
 	return {"remaining": remaining}
 
 
+def probe_gofrugal():
+	"""Probe GoFrugal RayMedi HQ auth methods and find working API access."""
+	import requests
+
+	BASE = "https://aqhq.gofrugal.com/RayMedi_HQ"
+	USER = "Accounts"
+	PASS = "Adil@7861"
+
+	# Try 1: Form-based login + session cookies
+	print("=== Try 1: POST login form ===")
+	s = requests.Session()
+	r = s.post(
+		BASE + "/login.do",
+		data={"userName": USER, "password": PASS},
+		allow_redirects=False,
+		timeout=30,
+	)
+	loc = r.headers.get("location", "-")
+	print(f"  HTTP {r.status_code}  Location: {loc}")
+	cookies = dict(s.cookies)
+	print(f"  Cookies: {list(cookies.keys())}")
+	if r.status_code in (200, 302):
+		r2 = s.get(BASE + "/api/v1/items", timeout=30)
+		ct = r2.headers.get("content-type", "?")
+		print(f"  API v1/items with session: HTTP {r2.status_code} CT: {ct}")
+		if r2.status_code != 401:
+			print(f"  Body preview: {r2.text[:500]}")
+		else:
+			print("  Still 401")
+
+	# Try 2: JSON login
+	print("\n=== Try 2: POST JSON /api/v1/login ===")
+	r = requests.post(
+		BASE + "/api/v1/login",
+		json={"userName": USER, "password": PASS},
+		headers={"Content-Type": "application/json"},
+		timeout=30,
+	)
+	print(f"  HTTP {r.status_code}")
+	print(f"  Body: {r.text[:400]}")
+
+	# Try 3: /api/v1/auth
+	print("\n=== Try 3: POST /api/v1/auth ===")
+	r = requests.post(
+		BASE + "/api/v1/auth",
+		json={"userName": USER, "password": PASS},
+		timeout=30,
+	)
+	print(f"  HTTP {r.status_code}")
+	print(f"  Body: {r.text[:400]}")
+
+	# Try 4: /api/v2/login
+	print("\n=== Try 4: POST /api/v2/login ===")
+	r = requests.post(
+		BASE + "/api/v2/login",
+		json={"userName": USER, "password": PASS},
+		timeout=30,
+	)
+	print(f"  HTTP {r.status_code}")
+	print(f"  Body: {r.text[:400]}")
+
+	# Try 5: session-based v2 after form login
+	print("\n=== Try 5: Form login then v2/items with session ===")
+	s2 = requests.Session()
+	s2.post(BASE + "/login.do", data={"userName": USER, "password": PASS}, timeout=30)
+	r = s2.get(BASE + "/api/v2/items", timeout=30)
+	ct = r.headers.get("content-type", "?")
+	print(f"  HTTP {r.status_code} CT: {ct}")
+	if "json" in ct:
+		print(f"  Body: {r.text[:500]}")
+	elif r.status_code != 401:
+		print(f"  Body preview: {r.text[:300]}")
+	else:
+		print("  Still 401")
+
+	# Try 6: sales bills endpoint (what the user actually wants)
+	print("\n=== Try 6: Form login then sales bills endpoints ===")
+	for path in ["/api/v1/salesBills", "/api/v1/bills", "/api/v2/salesBills", "/api/v2/bills", "/api/v1/invoices", "/api/v2/invoices"]:
+		r = s2.get(BASE + path, timeout=30)
+		print(f"  {path} -> HTTP {r.status_code}")
+
+
 def setup_and_test():
 	verify_schema()
 	seed_sales_channels()
