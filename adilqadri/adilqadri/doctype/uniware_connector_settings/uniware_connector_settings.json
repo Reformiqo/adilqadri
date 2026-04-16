@@ -123,6 +123,20 @@
       "default": "15"
     },
     {
+      "fieldname": "default_hsn_code",
+      "fieldtype": "Data",
+      "label": "Default HSN/SAC Code",
+      "default": "33030090",
+      "description": "Applied to auto-created Items during order pull. 33030090 = Perfumes and toilet waters."
+    },
+    {
+      "fieldname": "default_item_group",
+      "fieldtype": "Link",
+      "options": "Item Group",
+      "label": "Default Item Group for Auto-Created Items",
+      "description": "Item group used when creating new ERPNext items from Uniware order data."
+    },
+    {
       "fieldname": "last_sync_at",
       "fieldtype": "Datetime",
       "label": "Last Sync At",
