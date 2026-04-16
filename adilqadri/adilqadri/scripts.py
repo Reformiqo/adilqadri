@@ -573,6 +573,44 @@ def probe_gofrugal():
 	else:
 		print("  Still 401")
 
+	# Try 5b: Re-check login — maybe field names are different
+	print("\n=== Try 5b: Login with different field names ===")
+	for fields in [
+		{"userName": USER, "password": PASS},
+		{"username": USER, "password": PASS},
+		{"user": USER, "pwd": PASS},
+		{"loginId": USER, "loginPwd": PASS},
+	]:
+		s_test = requests.Session()
+		r = s_test.post(BASE + "/login.do", data=fields, timeout=15)
+		# Check if login succeeded by trying an API call
+		r2 = s_test.get(BASE + "/api/v1/sales", timeout=15)
+		success = r2.status_code != 401
+		print(f"  fields={list(fields.keys())} -> login={r.status_code}, api={r2.status_code} {'SUCCESS!' if success else ''}")
+		if success:
+			print(f"  API body: {r2.text[:500]}")
+			break
+
+	# Try 5c: Fetch the API key pages (they returned 200)
+	print("\n=== Try 5c: API key pages content ===")
+	s_login = requests.Session()
+	s_login.post(BASE + "/login.do", data={"userName": USER, "password": PASS}, timeout=15)
+	for path in ["/generateApiKey.do", "/settings/apiKey.do"]:
+		r = s_login.get(BASE + path, timeout=15)
+		body = r.text
+		# Look for anything that looks like a key/token
+		import re
+		tokens = re.findall(r'[a-f0-9]{20,}|[A-Za-z0-9_\-]{20,}', body)
+		print(f"\n  {path}: HTTP {r.status_code}, body length={len(body)}")
+		if tokens:
+			print(f"  Potential tokens found: {tokens[:5]}")
+		# Also look for key/token in input fields
+		inputs = re.findall(r'<input[^>]*value=["\']([^"\']{10,})["\']', body)
+		if inputs:
+			print(f"  Input field values: {inputs[:5]}")
+		# Print first 600 chars for manual inspection
+		print(f"  Body preview: {body[:600]}")
+
 	# Try 6: token generation endpoints
 	print("\n=== Try 6: Token generation endpoints ===")
 	for path in ["/api/v1/token", "/api/v2/token", "/generateApiKey.do",
