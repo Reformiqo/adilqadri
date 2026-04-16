@@ -55,17 +55,6 @@ frappe.ui.form.on("Uniware Connector Settings", {
 				.catch(() => frappe.dom.unfreeze());
 		}, __("Test"));
 
-		frm.add_custom_button(__("Pull Orders (Dry Run)"), () => {
-			run_pull_orders(frm, true);
-		}, __("Sync"));
-
-		frm.add_custom_button(__("Pull Orders (Live)"), () => {
-			frappe.confirm(
-				__("This will CREATE Sales Orders in ERPNext from Uniware. Proceed?"),
-				() => run_pull_orders(frm, false),
-			);
-		}, __("Sync"));
-
 		frm.add_custom_button(__("Pull Invoices (Dry Run)"), () => {
 			run_pull_invoices(frm, true);
 		}, __("Sync"));

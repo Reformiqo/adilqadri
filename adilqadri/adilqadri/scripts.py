@@ -480,8 +480,8 @@ def prime_mappings_from_recent_orders(count: int = 5):
 
 
 def cleanup_test_invoices_and_items():
-	"""Delete all test Sales Invoices (with uniware_order_code) and auto-created
-	Items (numeric 617571* codes created by auto_create_items)."""
+	"""Delete all test Sales Invoices/Sales Orders (with uniware_order_code)
+	and auto-created Items (numeric 617571* codes)."""
 	# Delete Sales Invoices with Uniware codes
 	invoices = frappe.get_all(
 		"Sales Invoice",
@@ -491,6 +491,16 @@ def cleanup_test_invoices_and_items():
 	for name in invoices:
 		frappe.delete_doc("Sales Invoice", name, force=True, ignore_permissions=True)
 	print(f"Deleted {len(invoices)} Sales Invoices")
+
+	# Delete Sales Orders with Uniware codes
+	orders = frappe.get_all(
+		"Sales Order",
+		filters={"uniware_order_code": ["is", "set"]},
+		pluck="name",
+	)
+	for name in orders:
+		frappe.delete_doc("Sales Order", name, force=True, ignore_permissions=True)
+	print(f"Deleted {len(orders)} Sales Orders")
 
 	# Delete auto-created Items (numeric codes starting with 617571)
 	items = frappe.get_all(
