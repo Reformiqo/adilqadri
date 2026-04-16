@@ -5,7 +5,7 @@
     "fieldname": "channel_mapping_tab",
     "label": "Channel Mapping",
     "fieldtype": "Tab Break",
-    "insert_after": "website_specifications",
+    "insert_after": "default_item_manufacturer",
     "module": "Adilqadri"
   },
   {
