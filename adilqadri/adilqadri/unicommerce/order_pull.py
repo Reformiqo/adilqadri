@@ -440,13 +440,20 @@ def _lookup_by_normalized_name(uniware_name: str) -> str | None:
 
 
 def _add_channel_item_code_row(item_code, channel, channel_product_code, channel_item_name):
-	"""Append a Channel Item Code row to an existing Item if not already present."""
+	"""Append a Channel Item Code row to an existing Item if not already present.
+
+	FRD V-01: at most one row per channel per item. So if the channel already
+	has a row (with ANY product code), don't add a duplicate — that's a sign
+	the name match resolved to the wrong item, or this is a different SKU
+	for the same product.
+	"""
 	if not item_code or not channel or not channel_product_code:
 		return
 	item = frappe.get_doc("Item", item_code)
 	for row in item.get("channel_item_codes") or []:
-		if row.channel == channel and row.channel_product_code == channel_product_code:
-			return  # already mapped
+		if row.channel == channel:
+			# Channel already mapped — V-01 forbids duplicates. Skip.
+			return
 	item.append(
 		"channel_item_codes",
 		{

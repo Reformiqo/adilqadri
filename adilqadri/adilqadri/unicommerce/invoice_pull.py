@@ -254,41 +254,59 @@ def _ensure_customer_and_address(dto, dry_run=False):
 	cust.flags.ignore_mandatory = True
 	cust.insert(ignore_permissions=True)
 
+	# Validate phone/email — marketplaces send masked values like "***" that
+	# fail ERPNext's format validators. Only pass them through if they look real.
+	clean_phone = phone if (phone and len(phone) >= 8 and any(c.isdigit() for c in phone)) else None
+	clean_email = email if (email and "@" in email and "." in email) else None
+
 	# Create Address if we have data
 	addr_name = None
 	if billing.get("addressLine1") or billing.get("city"):
-		addr = frappe.new_doc("Address")
-		addr.address_title = customer_name[:100]
-		addr.address_type = "Billing"
-		addr.address_line1 = (billing.get("addressLine1") or "-")[:140]
-		addr.address_line2 = (billing.get("addressLine2") or "")[:140] or None
-		addr.city = (billing.get("city") or "-")[:140]
-		addr.state = _resolve_state(billing.get("state"))
-		addr.pincode = (billing.get("pincode") or "")[:10] or None
-		addr.country = _resolve_country(billing.get("country"))
-		addr.phone = phone or None
-		addr.email_id = email or None
-		addr.append("links", {"link_doctype": "Customer", "link_name": cust.name})
-		addr.flags.ignore_permissions = True
-		addr.flags.ignore_mandatory = True
-		addr.insert(ignore_permissions=True)
-		addr_name = addr.name
+		try:
+			addr = frappe.new_doc("Address")
+			addr.address_title = customer_name[:100]
+			addr.address_type = "Billing"
+			addr.address_line1 = (billing.get("addressLine1") or "-")[:140]
+			addr.address_line2 = (billing.get("addressLine2") or "")[:140] or None
+			addr.city = (billing.get("city") or "-")[:140]
+			addr.state = _resolve_state(billing.get("state"))
+			addr.pincode = (billing.get("pincode") or "")[:10] or None
+			addr.country = _resolve_country(billing.get("country"))
+			addr.phone = clean_phone
+			addr.email_id = clean_email
+			addr.append("links", {"link_doctype": "Customer", "link_name": cust.name})
+			addr.flags.ignore_permissions = True
+			addr.flags.ignore_mandatory = True
+			addr.insert(ignore_permissions=True)
+			addr_name = addr.name
+		except Exception as e:
+			# Address creation is non-critical — log and continue without one
+			frappe.log_error(
+				title="Uniware invoice pull — address create skipped",
+				message=f"Customer={cust.name}: {type(e).__name__}: {e}",
+			)
 
-	# Create Contact if we have phone or email
-	if phone or email:
-		contact = frappe.new_doc("Contact")
-		parts = customer_name.split(" ", 1)
-		contact.first_name = parts[0][:140]
-		if len(parts) > 1:
-			contact.last_name = parts[1][:140]
-		if phone:
-			contact.append("phone_nos", {"phone": phone, "is_primary_mobile_no": 1})
-		if email:
-			contact.append("email_ids", {"email_id": email, "is_primary": 1})
-		contact.append("links", {"link_doctype": "Customer", "link_name": cust.name})
-		contact.flags.ignore_permissions = True
-		contact.flags.ignore_mandatory = True
-		contact.insert(ignore_permissions=True)
+	# Create Contact only if phone or email passed cleanup
+	if clean_phone or clean_email:
+		try:
+			contact = frappe.new_doc("Contact")
+			parts = customer_name.split(" ", 1)
+			contact.first_name = parts[0][:140]
+			if len(parts) > 1:
+				contact.last_name = parts[1][:140]
+			if clean_phone:
+				contact.append("phone_nos", {"phone": clean_phone, "is_primary_mobile_no": 1})
+			if clean_email:
+				contact.append("email_ids", {"email_id": clean_email, "is_primary": 1})
+			contact.append("links", {"link_doctype": "Customer", "link_name": cust.name})
+			contact.flags.ignore_permissions = True
+			contact.flags.ignore_mandatory = True
+			contact.insert(ignore_permissions=True)
+		except Exception as e:
+			frappe.log_error(
+				title="Uniware invoice pull — contact create skipped",
+				message=f"Customer={cust.name}: {type(e).__name__}: {e}",
+			)
 
 	return cust.name, addr_name
 
@@ -313,11 +331,23 @@ INDIAN_STATE_MAP = {
 
 def _resolve_state(code):
 	"""Convert 2-letter Indian state code (GJ, MH, etc.) to the full name
-	that india_compliance expects in the state field."""
+	that india_compliance expects. Returns None for unknown values so the
+	address still saves without india_compliance rejecting an unknown state."""
 	if not code:
 		return None
-	code = code.strip().upper()
-	return INDIAN_STATE_MAP.get(code, code)
+	code = code.strip()
+	if not code:
+		return None
+	# Try the 2-letter code map first
+	mapped = INDIAN_STATE_MAP.get(code.upper())
+	if mapped:
+		return mapped
+	# Maybe the value is already a full state name — verify against ERPNext
+	exists = frappe.db.exists("State", code) if frappe.db.has_table("tabState") else None
+	if exists:
+		return code
+	# Unknown — return None to skip the field (address still saves)
+	return None
 
 
 def _resolve_country(code):
