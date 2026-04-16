@@ -125,6 +125,23 @@ def _push_one_row(client: UniwareClient, item, row) -> tuple[str, str | None]:
 	exists = bool(
 		existing and existing.get("successful") and existing.get("itemTypeDTO")
 	)
+
+	# SAFETY CHECK: if the item already exists in Uniware with a DIFFERENT
+	# name, block the push. This prevents wrong mappings (e.g. from demo data)
+	# from silently overwriting Uniware's real catalog data.
+	if exists:
+		existing_name = (existing["itemTypeDTO"].get("name") or "").strip()
+		our_name = payload.get("name", "").strip()
+		if existing_name and our_name and _names_too_different(existing_name, our_name):
+			return (
+				"Failed",
+				f"SAFETY BLOCK: Uniware already has this SKU named "
+				f"'{existing_name}' but ERPNext wants to push '{our_name}'. "
+				f"These look like different products — the Channel Item Code "
+				f"mapping may be wrong. Fix the mapping or clear this check "
+				f"before pushing.",
+			)
+
 	endpoint = EDIT_ENDPOINT if exists else CREATE_ENDPOINT
 
 	try:
@@ -169,3 +186,23 @@ def _build_item_type_payload(item, row, sku: str) -> dict:
 		payload["sellingPrice"] = flt(item.standard_rate)
 
 	return payload
+
+
+def _names_too_different(a: str, b: str) -> bool:
+	"""
+	Return True if two item names look like they refer to DIFFERENT products.
+
+	Uses a simple word-overlap ratio: if fewer than 40% of words are shared,
+	the names are considered too different to auto-overwrite. This catches
+	cases like "AQ Aqua Perfume 5.5 ML" vs "Shanaya Attar 5.5 ML" (clearly
+	different products) while allowing "AQ Aqua Perfume 5.5ML" vs
+	"AQ Aqua Luxury Perfume - 5.5 ML" (same product, minor phrasing).
+	"""
+	words_a = set(a.lower().split())
+	words_b = set(b.lower().split())
+	if not words_a or not words_b:
+		return False
+	overlap = len(words_a & words_b)
+	max_words = max(len(words_a), len(words_b))
+	ratio = overlap / max_words if max_words else 0
+	return ratio < 0.4
