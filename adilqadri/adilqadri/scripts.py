@@ -479,6 +479,25 @@ def prime_mappings_from_recent_orders(count: int = 5):
 	return {"created": created, "skipped": skipped, "total": len(pairs)}
 
 
+def cleanup_demo_data():
+	"""Delete all demo/prime/auto-mapped Channel Item Code rows that were
+	created during testing. These are random item-to-channel pairings and
+	must NOT be used for real sync — they can cause wrong data pushes."""
+	deleted = frappe.db.sql(
+		"""
+		DELETE FROM `tabChannel Item Code`
+		WHERE remarks LIKE %s
+		   OR remarks LIKE %s
+		   OR remarks LIKE %s
+		""",
+		("%Auto-primed%", "%Demo mapping%", "%Auto-mapped%"),
+	)
+	frappe.db.commit()
+	remaining = frappe.db.count("Channel Item Code")
+	print(f"Cleanup done. Remaining Channel Item Code rows: {remaining}")
+	return {"remaining": remaining}
+
+
 def setup_and_test():
 	verify_schema()
 	seed_sales_channels()
