@@ -210,26 +210,28 @@ def _ensure_customer_and_address(dto, dry_run=False):
 	if dry_run:
 		return customer_name, None
 
-	# Try to find existing customer by name
-	existing = frappe.db.get_value("Customer", {"customer_name": customer_name}, "name")
-	if not existing and phone:
-		# Try by phone in Dynamic Link on Contact
-		contact = frappe.db.get_value(
-			"Contact Phone",
-			{"phone": phone, "parenttype": "Contact"},
-			"parent",
-		)
-		if contact:
-			link = frappe.db.get_value(
-				"Dynamic Link",
-				{"parent": contact, "link_doctype": "Customer"},
-				"link_name",
+	# Only try dedup when we have a REAL (non-masked) customer name.
+	# Marketplace orders with masked PII should each get their own
+	# Customer record — there's no reliable data to dedup on.
+	existing = None
+	if not is_masked:
+		existing = frappe.db.get_value("Customer", {"customer_name": customer_name}, "name")
+		if not existing and phone and len(phone) >= 8:
+			contact = frappe.db.get_value(
+				"Contact Phone",
+				{"phone": phone, "parenttype": "Contact"},
+				"parent",
 			)
-			if link:
-				existing = link
+			if contact:
+				link = frappe.db.get_value(
+					"Dynamic Link",
+					{"parent": contact, "link_doctype": "Customer"},
+					"link_name",
+				)
+				if link:
+					existing = link
 
 	if existing:
-		# Find their address
 		addr = frappe.db.get_value(
 			"Dynamic Link",
 			{"link_doctype": "Customer", "link_name": existing, "parenttype": "Address"},
