@@ -573,11 +573,37 @@ def probe_gofrugal():
 	else:
 		print("  Still 401")
 
-	# Try 6: sales bills endpoint (what the user actually wants)
-	print("\n=== Try 6: Form login then sales bills endpoints ===")
-	for path in ["/api/v1/salesBills", "/api/v1/bills", "/api/v2/salesBills", "/api/v2/bills", "/api/v1/invoices", "/api/v2/invoices"]:
-		r = s2.get(BASE + path, timeout=30)
+	# Try 6: token generation endpoints
+	print("\n=== Try 6: Token generation endpoints ===")
+	for path in ["/api/v1/token", "/api/v2/token", "/generateApiKey.do",
+	             "/api/v1/generateToken", "/api/v2/generateToken",
+	             "/api/generateAccessToken", "/settings/apiKey.do"]:
+		r = s2.get(BASE + path, timeout=15)
 		print(f"  {path} -> HTTP {r.status_code}")
+		if r.status_code == 200 and "json" in r.headers.get("content-type", ""):
+			print(f"    Body: {r.text[:300]}")
+
+	# Try 7: Check what the login.do response body contains
+	print("\n=== Try 7: Login response body ===")
+	s3 = requests.Session()
+	r = s3.post(BASE + "/login.do",
+	            data={"userName": USER, "password": PASS}, timeout=30)
+	body = r.text[:1000]
+	if "token" in body.lower() or "key" in body.lower() or "api" in body.lower():
+		print(f"  Found interesting keywords in login response!")
+		print(f"  Body: {body}")
+	else:
+		print(f"  No token/key/api keywords. Body length: {len(r.text)} chars")
+		print(f"  First 300 chars: {body[:300]}")
+
+	# Try 8: sales related endpoints with session
+	print("\n=== Try 8: Sales endpoints ===")
+	for path in ["/api/v1/salesBills", "/api/v1/sales", "/api/v2/sales",
+	             "/api/v1/transactions", "/api/v2/transactions",
+	             "/api/v1/reports/sales", "/api/v2/reports/sales",
+	             "/api/v1/billDetails", "/api/v2/billDetails"]:
+		r = s3.get(BASE + path, timeout=15)
+		print(f"  {path} -> {r.status_code}")
 
 
 def setup_and_test():
