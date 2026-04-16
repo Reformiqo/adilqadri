@@ -488,7 +488,10 @@ def _auto_create_item(uniware_sku, uniware_name):
 		or frappe.db.get_value("Item Group", {"is_group": 0}, "name")
 		or "All Item Groups"
 	)
-	default_hsn = (settings.default_hsn_code or "").strip()
+	# Fallback HSN: 33030090 = Perfumes and toilet waters. Correct for
+	# Adilqadri's catalog. Override via Uniware Connector Settings if a
+	# different HSN fits your items.
+	default_hsn = (settings.default_hsn_code or "33030090").strip()
 
 	doc = frappe.new_doc("Item")
 	doc.item_code = uniware_sku
@@ -498,11 +501,9 @@ def _auto_create_item(uniware_sku, uniware_name):
 	doc.is_sales_item = 1
 	doc.is_stock_item = 1
 	doc.include_item_in_manufacturing = 0
-	if default_hsn:
-		# india_compliance uses this field; harmless if the compliance app
-		# isn't installed because Item is a core ERPNext doctype and this
-		# is just a regular field set.
-		doc.gst_hsn_code = default_hsn
+	# india_compliance hooks Item.validate to require this field. Ensure it's
+	# set regardless of whether the Custom Field appears in doc's metadata.
+	doc.set("gst_hsn_code", default_hsn)
 	doc.flags.ignore_permissions = True
 	doc.flags.ignore_mandatory = True
 	doc.insert(ignore_permissions=True)
