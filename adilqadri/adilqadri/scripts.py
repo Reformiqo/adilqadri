@@ -479,6 +479,36 @@ def prime_mappings_from_recent_orders(count: int = 5):
 	return {"created": created, "skipped": skipped, "total": len(pairs)}
 
 
+def cleanup_test_invoices_and_items():
+	"""Delete all test Sales Invoices (with uniware_order_code) and auto-created
+	Items (numeric 617571* codes created by auto_create_items)."""
+	# Delete Sales Invoices with Uniware codes
+	invoices = frappe.get_all(
+		"Sales Invoice",
+		filters={"uniware_order_code": ["is", "set"]},
+		pluck="name",
+	)
+	for name in invoices:
+		frappe.delete_doc("Sales Invoice", name, force=True, ignore_permissions=True)
+	print(f"Deleted {len(invoices)} Sales Invoices")
+
+	# Delete auto-created Items (numeric codes starting with 617571)
+	items = frappe.get_all(
+		"Item",
+		filters={"name": ["like", "617571%"]},
+		pluck="name",
+	)
+	for name in items:
+		try:
+			frappe.delete_doc("Item", name, force=True, ignore_permissions=True)
+		except Exception as e:
+			print(f"  skip {name}: {e}")
+	print(f"Deleted {len(items)} auto-created Items")
+
+	frappe.db.commit()
+	print("Done.")
+
+
 def cleanup_demo_data():
 	"""Delete all demo/prime/auto-mapped Channel Item Code rows that were
 	created during testing. These are random item-to-channel pairings and

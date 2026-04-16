@@ -97,12 +97,6 @@ function run_pull_invoices(frm, dry_run) {
 				default: dry_run ? 5 : 10,
 				reqd: 1,
 			},
-			{
-				fieldname: "auto_create_items",
-				label: __("Auto-create missing items"),
-				fieldtype: "Check",
-				default: 0,
-			},
 		],
 		primary_action_label: dry_run ? __("Run Dry Run") : __("CREATE"),
 		primary_action(values) {
@@ -114,7 +108,6 @@ function run_pull_invoices(frm, dry_run) {
 					updated_since_minutes: values.updated_since_minutes,
 					limit: values.limit,
 					dry_run: dry_run ? 1 : 0,
-					auto_create_items: values.auto_create_items ? 1 : 0,
 				},
 				callback(r) {
 					frappe.dom.unfreeze();

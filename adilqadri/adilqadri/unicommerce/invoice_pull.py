@@ -38,12 +38,15 @@ UNIWARE_LINE_SKU_FIELD = "uniware_item_sku"
 
 
 @frappe.whitelist()
-def pull_invoices(updated_since_minutes=60, limit=10, dry_run=1, auto_create_items=0):
-	"""Pull recent Uniware orders and create ERPNext Sales Invoices."""
+def pull_invoices(updated_since_minutes=60, limit=10, dry_run=1):
+	"""Pull recent Uniware orders and create ERPNext Sales Invoices.
+
+	Items MUST be pre-mapped in Channel Item Code. Unmapped items cause the
+	order to be skipped with an error — NO auto-creation of ERPNext Items.
+	"""
 	updated_since_minutes = int(updated_since_minutes)
 	limit = int(limit)
 	dry_run = bool(int(dry_run))
-	auto_create_items = bool(int(auto_create_items))
 
 	client = UniwareClient()
 	default_company = _default_company()
@@ -67,12 +70,10 @@ def pull_invoices(updated_since_minutes=60, limit=10, dry_run=1, auto_create_ite
 	result = {
 		"ok": True,
 		"dry_run": dry_run,
-		"auto_create_items": auto_create_items,
 		"total_matching": total_matching,
 		"fetched": len(elements),
 		"created": 0,
 		"skipped_exists": 0,
-		"items_created": 0,
 		"mappings_created": 0,
 		"errors": [],
 		"sample": [],
@@ -101,7 +102,7 @@ def pull_invoices(updated_since_minutes=60, limit=10, dry_run=1, auto_create_ite
 
 		try:
 			prepared = _prepare_invoice(
-				dto, default_company, auto_create_items, resolve_stats, dry_run=dry_run
+				dto, default_company, resolve_stats, dry_run=dry_run
 			)
 		except Exception as e:
 			result["errors"].append(
@@ -136,7 +137,6 @@ def pull_invoices(updated_since_minutes=60, limit=10, dry_run=1, auto_create_ite
 					{"code": order_code, "stage": "create", "error": f"{type(e).__name__}: {e}"}
 				)
 
-	result["items_created"] = resolve_stats["items_created"]
 	result["mappings_created"] = resolve_stats["mappings_created"]
 
 	if not dry_run:
@@ -151,14 +151,14 @@ def _invoice_already_synced(order_code):
 	return bool(frappe.db.exists("Sales Invoice", {UNIWARE_ORDER_CODE_FIELD: order_code}))
 
 
-def _prepare_invoice(dto, default_company, auto_create_items, resolve_stats, dry_run=False):
+def _prepare_invoice(dto, default_company, resolve_stats, dry_run=False):
 	channel_str = dto.get("channel") or ""
 	sales_channel = _ensure_sales_channel(channel_str, dry_run=dry_run)
 	customer_name, customer_address = _ensure_customer_and_address(dto, dry_run=dry_run)
 	items = _resolve_items(
 		sales_channel,
 		dto.get("saleOrderItems") or [],
-		auto_create_items=auto_create_items,
+		auto_create_items=False,
 		resolve_stats=resolve_stats,
 		dry_run=dry_run,
 	)
@@ -253,7 +253,7 @@ def _ensure_customer_and_address(dto, dry_run=False):
 		addr.address_line1 = (billing.get("addressLine1") or "-")[:140]
 		addr.address_line2 = (billing.get("addressLine2") or "")[:140] or None
 		addr.city = (billing.get("city") or "-")[:140]
-		addr.state = (billing.get("state") or "")[:140] or None
+		addr.state = _resolve_state(billing.get("state"))
 		addr.pincode = (billing.get("pincode") or "")[:10] or None
 		addr.country = _resolve_country(billing.get("country"))
 		addr.phone = phone or None
@@ -281,6 +281,33 @@ def _ensure_customer_and_address(dto, dry_run=False):
 		contact.insert(ignore_permissions=True)
 
 	return cust.name, addr_name
+
+
+INDIAN_STATE_MAP = {
+	"AN": "Andaman and Nicobar Islands", "AP": "Andhra Pradesh",
+	"AR": "Arunachal Pradesh", "AS": "Assam", "BR": "Bihar",
+	"CH": "Chandigarh", "CT": "Chhattisgarh", "CG": "Chhattisgarh",
+	"DD": "Daman and Diu", "DL": "Delhi", "GA": "Goa",
+	"GJ": "Gujarat", "HP": "Himachal Pradesh", "HR": "Haryana",
+	"JH": "Jharkhand", "JK": "Jammu and Kashmir", "KA": "Karnataka",
+	"KL": "Kerala", "LA": "Ladakh", "LD": "Lakshadweep",
+	"MH": "Maharashtra", "ML": "Meghalaya", "MN": "Manipur",
+	"MP": "Madhya Pradesh", "MZ": "Mizoram", "NL": "Nagaland",
+	"OD": "Odisha", "OR": "Odisha", "PB": "Punjab",
+	"PY": "Puducherry", "RJ": "Rajasthan", "SK": "Sikkim",
+	"TN": "Tamil Nadu", "TS": "Telangana", "TG": "Telangana",
+	"TR": "Tripura", "UK": "Uttarakhand", "UT": "Uttarakhand",
+	"UP": "Uttar Pradesh", "WB": "West Bengal", "DN": "Dadra and Nagar Haveli",
+}
+
+
+def _resolve_state(code):
+	"""Convert 2-letter Indian state code (GJ, MH, etc.) to the full name
+	that india_compliance expects in the state field."""
+	if not code:
+		return None
+	code = code.strip().upper()
+	return INDIAN_STATE_MAP.get(code, code)
 
 
 def _resolve_country(code):
