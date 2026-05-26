@@ -222,5 +222,39 @@
     "insert_after": "uniware_item_code",
     "read_only": 1,
     "module": "Adilqadri"
+  },
+  {
+    "doctype": "Custom Field",
+    "dt": "Sales Invoice",
+    "fieldname": "gofrugal_section",
+    "label": "GoFrugal Import",
+    "fieldtype": "Section Break",
+    "insert_after": "uniware_last_synced_at",
+    "collapsible": 1,
+    "module": "Adilqadri"
+  },
+  {
+    "doctype": "Custom Field",
+    "dt": "Sales Invoice",
+    "fieldname": "gofrugal_bill_number",
+    "label": "GoFrugal Bill Number",
+    "fieldtype": "Data",
+    "insert_after": "gofrugal_section",
+    "read_only": 1,
+    "unique": 1,
+    "no_copy": 1,
+    "search_index": 1,
+    "module": "Adilqadri"
+  },
+  {
+    "doctype": "Custom Field",
+    "dt": "Sales Invoice",
+    "fieldname": "gofrugal_outlet",
+    "label": "GoFrugal Outlet",
+    "fieldtype": "Data",
+    "insert_after": "gofrugal_bill_number",
+    "read_only": 1,
+    "no_copy": 1,
+    "module": "Adilqadri"
   }
 ]
