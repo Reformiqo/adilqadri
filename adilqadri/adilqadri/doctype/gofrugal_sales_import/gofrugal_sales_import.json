@@ -1,0 +1,73 @@
+{
+ "name": "GoFrugal Sales Import",
+ "module": "Adilqadri",
+ "doctype": "DocType",
+ "issingle": 1,
+ "document_type": "Setup",
+ "engine": "InnoDB",
+ "track_changes": 1,
+ "fields": [
+  {
+   "fieldname": "sb_upload",
+   "fieldtype": "Section Break",
+   "label": "Upload GoFrugal Export"
+  },
+  {
+   "fieldname": "intro_html",
+   "fieldtype": "HTML",
+   "options": "<p>Attach the GoFrugal <b>3111 Sales Detail - Itemwise</b> export (.xls or .xlsx), then click <b>Preview (Dry Run)</b> to check it, and <b>Import (Create Drafts)</b> to create the Sales Invoices. Invoices are created as <b>Drafts</b> for Finance to review and submit.</p>"
+  },
+  {
+   "fieldname": "upload_file",
+   "fieldtype": "Attach",
+   "label": "GoFrugal Export File (.xls / .xlsx)",
+   "reqd": 1
+  },
+  {
+   "fieldname": "cb_options",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "update_stock",
+   "fieldtype": "Check",
+   "label": "Update Stock",
+   "default": "0",
+   "description": "Leave OFF unless the outlet → warehouse mapping is confirmed. When ON, each line needs a mapped warehouse or the invoice is skipped."
+  },
+  {
+   "fieldname": "naming_series_override",
+   "fieldtype": "Data",
+   "label": "Naming Series (optional)",
+   "description": "Leave blank to use the site default GST series. Set e.g. GST-2627.-.##### to pin it."
+  },
+  {
+   "fieldname": "sb_results",
+   "fieldtype": "Section Break",
+   "label": "Last Run Result"
+  },
+  {
+   "fieldname": "last_result",
+   "fieldtype": "Code",
+   "label": "Last Result (JSON)",
+   "options": "JSON",
+   "read_only": 1
+  }
+ ],
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1
+  },
+  {
+   "role": "Accounts Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

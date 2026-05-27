@@ -229,3 +229,72 @@ class TestGoFrugalImport(IntegrationTestCase):
 		}
 		with self.assertRaises(ValueError):
 			gi._create_sales_invoice(payload, self.company, update_stock=False, warehouse_map={})
+
+
+class TestGoFrugalSalesImportUI(IntegrationTestCase):
+	"""Exercises the 'GoFrugal Sales Import' screen's server path (run_import)."""
+
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		cls.item_code = "0"
+		if not frappe.db.exists("Item", cls.item_code):
+			item = frappe.new_doc("Item")
+			item.item_code = cls.item_code
+			item.item_name = "GoFrugal Test Item"
+			item.item_group = frappe.db.get_value("Item Group", {"is_group": 0}, "name")
+			item.stock_uom = gi.DEFAULT_UOM
+			item.is_stock_item = 0
+			hsn = frappe.get_all("GST HSN Code", limit=1, pluck="name")
+			if hsn:
+				item.gst_hsn_code = hsn[0]
+			item.flags.ignore_permissions = True
+			item.insert(ignore_permissions=True)
+		options = (frappe.get_meta("Sales Invoice").get_field("naming_series").options or "").split("\n")
+		cls.naming_series = next(
+			(o for o in options if o.strip() in ("SINV-.YY.-", "SRET-.YY.-")),
+			(options[0].strip() if options else None),
+		)
+
+	def setUp(self):
+		for name in frappe.get_all(
+			"Sales Invoice", filters={"gofrugal_bill_number": ("like", "TESTBILL%")}, pluck="name"
+		):
+			frappe.delete_doc("Sales Invoice", name, force=1, ignore_permissions=True)
+
+	def _attach_sample(self):
+		import base64
+
+		with tempfile.TemporaryDirectory() as d:
+			path = os.path.join(d, "sample.xlsx")
+			_write_sample_xlsx(path)
+			content = open(path, "rb").read()
+		f = frappe.get_doc(
+			{
+				"doctype": "File",
+				"file_name": "gofrugal_sample.xlsx",
+				"is_private": 1,
+				"content": base64.b64encode(content).decode(),
+				"decode": True,
+			}
+		).insert(ignore_permissions=True)
+		return f.file_url
+
+	def test_run_import_via_screen(self):
+		tool = frappe.get_single("GoFrugal Sales Import")
+		tool.upload_file = self._attach_sample()
+		tool.update_stock = 0
+		tool.naming_series_override = self.naming_series
+		tool.flags.ignore_permissions = True
+		tool.save(ignore_permissions=True)
+
+		preview = tool.run_import(dry_run=1)
+		self.assertTrue(preview["ok"], msg=str(preview))
+		self.assertEqual(preview["total_invoices"], 1)
+		self.assertEqual(preview["created"], 0)  # dry run writes nothing
+
+		done = tool.run_import(dry_run=0)
+		self.assertEqual(done["created"], 1, msg=str(done))
+		self.assertTrue(frappe.db.exists("Sales Invoice", {"gofrugal_bill_number": "TESTBILL001"}))
+		# last_result persisted for audit
+		self.assertIn("created", frappe.get_single("GoFrugal Sales Import").last_result or "")
