@@ -256,5 +256,85 @@
     "read_only": 1,
     "no_copy": 1,
     "module": "Adilqadri"
+  },
+  {
+    "doctype": "Custom Field",
+    "dt": "Sales Invoice",
+    "fieldname": "custom_uniware_state",
+    "label": "Uniware State",
+    "fieldtype": "Data",
+    "insert_after": "uniware_channel",
+    "read_only": 1,
+    "module": "Adilqadri"
+  },
+  {
+    "doctype": "Custom Field",
+    "dt": "Sales Invoice",
+    "fieldname": "custom_channel_name",
+    "label": "Channel Name",
+    "fieldtype": "Data",
+    "insert_after": "custom_uniware_state",
+    "read_only": 1,
+    "module": "Adilqadri"
+  },
+  {
+    "doctype": "Custom Field",
+    "dt": "Sales Invoice",
+    "fieldname": "custom_order_count",
+    "label": "Uniware Order Count",
+    "fieldtype": "Int",
+    "insert_after": "custom_channel_name",
+    "read_only": 1,
+    "module": "Adilqadri"
+  },
+  {
+    "doctype": "Custom Field",
+    "dt": "Sales Invoice",
+    "fieldname": "custom_sync_date",
+    "label": "Uniware Sync Date",
+    "fieldtype": "Datetime",
+    "insert_after": "custom_order_count",
+    "read_only": 1,
+    "module": "Adilqadri"
+  },
+  {
+    "doctype": "Custom Field",
+    "dt": "Sales Invoice",
+    "fieldname": "custom_order_ids",
+    "label": "Uniware Order IDs",
+    "fieldtype": "Long Text",
+    "insert_after": "custom_sync_date",
+    "read_only": 1,
+    "module": "Adilqadri"
+  },
+  {
+    "doctype": "Custom Field",
+    "dt": "Sales Invoice Item",
+    "fieldname": "custom_order_id",
+    "label": "Uniware Order ID",
+    "fieldtype": "Data",
+    "insert_after": "uniware_item_sku",
+    "read_only": 1,
+    "module": "Adilqadri"
+  },
+  {
+    "doctype": "Custom Field",
+    "dt": "Sales Invoice Item",
+    "fieldname": "custom_sku",
+    "label": "Uniware SKU",
+    "fieldtype": "Data",
+    "insert_after": "custom_order_id",
+    "read_only": 1,
+    "module": "Adilqadri"
+  },
+  {
+    "doctype": "Custom Field",
+    "dt": "Sales Invoice Item",
+    "fieldname": "custom_shipment_id",
+    "label": "Uniware Shipment ID",
+    "fieldtype": "Data",
+    "insert_after": "custom_sku",
+    "read_only": 1,
+    "module": "Adilqadri"
   }
 ]

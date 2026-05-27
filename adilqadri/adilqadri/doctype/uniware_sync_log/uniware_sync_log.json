@@ -1,0 +1,91 @@
+{
+ "name": "Uniware Sync Log",
+ "module": "Adilqadri",
+ "doctype": "DocType",
+ "document_type": "Document",
+ "engine": "InnoDB",
+ "naming_rule": "Expression (old style)",
+ "autoname": "USL-.YYYY.-.#####",
+ "track_changes": 1,
+ "fields": [
+  {
+   "fieldname": "sync_date",
+   "fieldtype": "Datetime",
+   "label": "Sync Date",
+   "in_list_view": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "state",
+   "fieldtype": "Data",
+   "label": "State",
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "channel",
+   "fieldtype": "Data",
+   "label": "Channel",
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "order_count",
+   "fieldtype": "Int",
+   "label": "Order Count",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "cb_usl_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "sales_invoice",
+   "fieldtype": "Link",
+   "options": "Sales Invoice",
+   "label": "Sales Invoice",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "Success\nPartial\nError\nSkipped",
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "sb_usl_detail",
+   "fieldtype": "Section Break",
+   "label": "Detail"
+  },
+  {
+   "fieldname": "order_ids",
+   "fieldtype": "Long Text",
+   "label": "Uniware Order IDs",
+   "description": "Newline-separated Uniware order codes included in this sync."
+  },
+  {
+   "fieldname": "error_log",
+   "fieldtype": "Long Text",
+   "label": "Error Log"
+  }
+ ],
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1
+  },
+  {
+   "role": "Accounts Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}
