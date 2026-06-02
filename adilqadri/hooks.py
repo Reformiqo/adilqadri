@@ -10,6 +10,9 @@ doc_events = {
 	"Item": {
 		"validate": "adilqadri.adilqadri.unicommerce.item_mapping.validate_item_channel_codes",
 	},
+    "Sales Invoice": {
+		"on_submit": "adilqadri.public.python.inter_branch_transfer.on_submit",
+	},
 }
 
 # Custom JS injected into the Item form — adds the "Sync to Uniware" button
