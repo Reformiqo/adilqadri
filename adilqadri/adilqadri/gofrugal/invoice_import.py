@@ -171,6 +171,9 @@ def build_invoice_payload(bill_number, group_rows, posting_date):
 		items.append(
 			{
 				"item_code": item_code,
+				# Raw GoFrugal Item Code (source column E) kept for traceability on the
+				# Sales Invoice Item, even though it currently equals the ERPNext code.
+				"custom_gofrugal_item_code": item_code,
 				"item_name": ("" if is_blank(r.get(COL_ITEM_NAME)) else str(r.get(COL_ITEM_NAME)).strip()),
 				"barcode": clean_int_str(r.get(COL_EAN)),
 				"qty": to_float(r.get(COL_QTY)),
@@ -329,23 +332,41 @@ def _bill_already_imported(bill_number):
 	)
 
 
+def _resolve_item_by_gofrugal_code(gofrugal_code):
+	"""Map a GoFrugal Item Code (source col E) to an ERPNext Item.
+
+	The GoFrugal code is NOT the ERPNext Item code; it is stored on the Item
+	master in the ``custom_gofrugal_item_code`` field. Returns the ERPNext Item
+	name, or None if no Item carries this GoFrugal code.
+	"""
+	if not gofrugal_code:
+		return None
+	return frappe.db.get_value(
+		"Item", {"custom_gofrugal_item_code": gofrugal_code}, "name"
+	)
+
+
 def _create_sales_invoice(payload, company, update_stock, warehouse_map, naming_series=None):
 	from frappe.utils import nowdate
 
-	# All items must resolve to real ERPNext Items — no auto-create.
+	# Each GoFrugal code must map to a real ERPNext Item via
+	# Item.custom_gofrugal_item_code — no auto-create.
 	missing = []
 	resolved = []
 	for it in payload["items"]:
-		code = it.get("item_code")
-		if not code:
+		gofrugal_code = it.get("custom_gofrugal_item_code") or it.get("item_code")
+		if not gofrugal_code:
 			missing.append("<blank>")
 			continue
-		if not frappe.db.exists("Item", code):
-			missing.append(code)
+		erp_item_code = _resolve_item_by_gofrugal_code(gofrugal_code)
+		if not erp_item_code:
+			missing.append(gofrugal_code)
 			continue
-		resolved.append(it)
+		# item_code becomes the resolved ERPNext Item; the GoFrugal code is
+		# retained for traceability on the Sales Invoice Item line.
+		resolved.append({**it, "item_code": erp_item_code, "custom_gofrugal_item_code": gofrugal_code})
 	if missing:
-		raise ValueError(f"unknown Item(s): {', '.join(sorted(set(missing)))}")
+		raise ValueError(f"unknown GoFrugal Item Code(s): {', '.join(sorted(set(missing)))}")
 	if not resolved:
 		raise ValueError("no resolvable items")
 
@@ -389,6 +410,8 @@ def _create_sales_invoice(payload, company, update_stock, warehouse_map, naming_
 			"rate": it["rate"],
 			"uom": DEFAULT_UOM,
 		}
+		if it.get("custom_gofrugal_item_code"):
+			line["custom_gofrugal_item_code"] = it["custom_gofrugal_item_code"]
 		if it.get("price_list_rate"):
 			line["price_list_rate"] = it["price_list_rate"]
 		if it.get("discount_percentage"):
@@ -455,12 +478,23 @@ def import_sales_invoices(
 			continue
 
 		if dry_run:
+			# Flag GoFrugal codes with no matching Item so finance can fix the
+			# mapping before the real import (which would otherwise error the bill).
+			unmapped = sorted(
+				{
+					i["custom_gofrugal_item_code"]
+					for i in payload["items"]
+					if i.get("custom_gofrugal_item_code")
+					and not _resolve_item_by_gofrugal_code(i["custom_gofrugal_item_code"])
+				}
+			)
 			result["sample"].append(
 				{
 					"bill_number": bill,
 					"customer": payload["customer"] or payload["customer_name"],
 					"item_count": len([i for i in payload["items"] if i.get("item_code")]),
 					"total": round(sum(i.get("qty", 0) * i.get("rate", 0) for i in payload["items"]), 2),
+					"unmapped_codes": unmapped,
 				}
 			)
 			continue
