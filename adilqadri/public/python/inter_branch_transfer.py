@@ -45,18 +45,23 @@ def on_submit(self, method=None):
         "BRANCH TRANSFER (OTHER STATE) - AEPL": "STOCK INWARD  (OTHER STATE) - AEPL",
     }
 
-    # Header fields
-    # NOTE: On a Purchase Invoice, `company_gstin` is read-only and is auto-fetched
-    # from `billing_address.gstin`. Setting pi.company_gstin directly does NOT work --
+    # Note: On a PI, 'company_gstin' is read-only and is auto-fetched
+    # from 'billing_address.gstin'. Setting pi.company_gstin directly does NOT work 
     # it gets overwritten during validation. Set a valid company Address instead.
-    pi.supplier = self.company_address  # the Supplier representing the selling branch
+
+    linked_supplier_in_address = frappe.db.get_value("Dynamic Link", {"parent": self.company_address, "link_doctype": "Supplier"}, "link_name")
+    print('\n\n linked_supplier_in_address :', linked_supplier_in_address, '\n\n')
+    if linked_supplier_in_address:
+        pi.supplier = linked_supplier_in_address
+    else:
+        frappe.throw("Please set Supplier in Address.")
     # pi.supplier_address = self.company_address_display
     # pi.supplier_address = self.company_address  # seller branch address -> supplier_gstin
     # pi.billing_address = self.customer_address  # buyer (company) address -> company_gstin
     pi.bill_no = self.name
     pi.bill_date = self.posting_date
     pi.custom_expense_account = account_mapping.get(self.custom_income_account_)
-    pi.billing_address = self.customer_address  # Address ("Al Nuaim-Billing-2") -> company_gstin
+    pi.billing_address = self.customer_address
     pi.billing_address_display = self.address_display
 
     # Optional fields
